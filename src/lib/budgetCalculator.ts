@@ -19,14 +19,24 @@ export function calculateBudget(input: {
   scenarioOff?: string[];
 }): BudgetSummary {
   const off = new Set(input.scenarioOff || []);
-  const totalIncome = input.incomes.reduce((sum, i) => sum + incomeMonthly(i), 0);
+  const manualIncomeTotal = input.incomes.reduce((sum, i) => sum + incomeMonthly(i), 0);
+  const incomeItems: BudgetLine[] = input.incomes.map(i => ({
+    id: i.id,
+    label: i.label,
+    amount: incomeMonthly(i),
+    category: 'Inkomst',
+    source: 'manual',
+    frequency: i.frequency,
+  }));
   const fixedItems: BudgetLine[] = [];
   const variableItems: BudgetLine[] = [];
   const activeRecurring: BudgetLine[] = [];
+  let recurringIncomeTotal = 0;
 
   for (const r of input.detection.recurring) {
     const d = input.recurringDecisions[r.id];
-    const status = d?.status || (r.confidence >= 70 ? 'confirmed' : 'pending');
+    const defaultStatus = r.costTypeDefault === 'income' ? 'pending' : (r.confidence >= 70 ? 'confirmed' : 'pending');
+    const status = d?.status || defaultStatus;
     if (status === 'rejected' || off.has(r.id)) continue;
     if (status !== 'confirmed') continue;
     const costType = d?.costType || r.costTypeDefault;
@@ -40,8 +50,14 @@ export function calculateBudget(input: {
       frequency: r.frequency,
     };
     activeRecurring.push(line);
-    if (costType === 'fixed') fixedItems.push(line);
-    else variableItems.push(line);
+    if (costType === 'income') {
+      recurringIncomeTotal += line.amount;
+      incomeItems.push(line);
+    } else if (costType === 'fixed') {
+      fixedItems.push(line);
+    } else {
+      variableItems.push(line);
+    }
   }
 
   for (const mx of input.manualExpenses) {
@@ -56,6 +72,7 @@ export function calculateBudget(input: {
     variableItems.push({ id: vp.id, label: vp.label, amount: vp.amount, category: vp.category, source: 'variablePlan' });
   }
 
+  const totalIncome = manualIncomeTotal + recurringIncomeTotal;
   const fixedTotal = fixedItems.reduce((s, x) => s + x.amount, 0);
   const variablePlanTotal = variableItems.reduce((s, x) => s + x.amount, 0);
   const totalMonthlyPlan = fixedTotal + variablePlanTotal;
@@ -67,5 +84,5 @@ export function calculateBudget(input: {
   if (remainingAfterPlan < 0) warnings.push('Månadsplanen går minus med nuvarande inkomster.');
   if (input.detection.reviewItems.length > 0) warnings.push(`${input.detection.reviewItems.length} oklara poster behöver granskas.`);
 
-  return { totalIncome, fixedTotal, variablePlanTotal, totalMonthlyPlan, remainingAfterFixed, remainingAfterPlan, fixedItems, variableItems, activeRecurring, warnings };
+  return { totalIncome, fixedTotal, variablePlanTotal, totalMonthlyPlan, remainingAfterFixed, remainingAfterPlan, fixedItems, variableItems, activeRecurring, incomeItems, warnings };
 }
