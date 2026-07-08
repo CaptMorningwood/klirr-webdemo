@@ -9,7 +9,7 @@
 5. Välj gärna `Private` om du inte vill att koden ska vara publik.
 6. Klicka `Create repository`.
 7. På repo-sidan: klicka `uploading an existing file`.
-8. Packa upp ZIP-filen `klirr-webdemo-vercel-v0.7.zip` på datorn.
+8. Packa upp ZIP-filen `klirr-webdemo-vercel-v0.7.1.1.zip` på datorn.
 9. Dra in alla filer från den uppackade mappen till GitHub-uppladdningen.
 10. Klicka `Commit changes`.
 

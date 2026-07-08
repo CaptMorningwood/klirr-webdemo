@@ -1,4 +1,4 @@
-# Klirr Web Demo v0.7
+# Klirr Web Demo v0.7.1
 
 Mobilanpassad webbdemo av Klirr för Vercel.
 
