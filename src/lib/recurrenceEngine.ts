@@ -1,4 +1,4 @@
-import type { Account, CostType, DetectionResult, RecurringExpense, ReviewItem, Rule, Transaction, TransferDecision } from '../types';
+import type { Account, DetectionResult, RecurringExpense, ReviewItem, Rule, Transaction, TransferDecision } from '../types';
 import { clamp, daysBetween } from './format';
 import { merchantKey } from './normalize';
 import { categorize } from './rulesEngine';
@@ -79,6 +79,68 @@ function reviewTypeLabel(direction: Direction) {
   return direction === 'income' ? 'inkomst' : 'utgift';
 }
 
+function isProbablyEverydayVariable(category: string, normName: string) {
+  const haystack = `${category} ${normName}`.toLowerCase();
+  return [
+    'mat och hushåll',
+    'restaurang',
+    'fika',
+    'nöje',
+    'bil/transport',
+    'parkering',
+    'bränsle',
+    'okategoriserad',
+  ].some(word => haystack.includes(word));
+}
+
+function isKnownRecurringLike(category: ReturnType<typeof categorize>, direction: Direction, normName: string) {
+  if (direction === 'income') return true;
+  if (category.costType === 'fixed') return true;
+  return /hyra|försäkring|forsakring|telia|bredband|fiber|gym|lån|lan|finans|leasing|abonnemang|subscription|medlemskap|fack|a-kassa|akassa/i.test(normName);
+}
+
+function shouldSurfaceLowConfidence(item: RecurringExpense, direction: Direction, category: ReturnType<typeof categorize>, normName: string) {
+  if (item.confidence < 40) return false;
+  if (item.occurrences < 2) return false;
+  if (item.frequency === 'irregular') return false;
+  if (direction === 'income') return item.monthlyAmount >= 1000 || category.costType === 'income';
+  if (isProbablyEverydayVariable(item.category, normName) && category.costType !== 'fixed') return false;
+  return isKnownRecurringLike(category, direction, normName) || item.monthlyAmount >= 1000;
+}
+
+function shouldSurfaceOutlier(direction: Direction, category: ReturnType<typeof categorize>, normName: string, absAmount: number) {
+  if (direction === 'income') return absAmount >= 3000;
+  if (category.costType === 'fixed') return absAmount >= 300;
+  if (isProbablyEverydayVariable(category.category, normName)) return absAmount >= 2500;
+  return absAmount >= 1000;
+}
+
+function shouldSurfaceDuplicate(direction: Direction, category: ReturnType<typeof categorize>, normName: string, absAmount: number) {
+  if (absAmount < 300) return false;
+  if (direction === 'income') return true;
+  if (category.costType === 'fixed') return true;
+  return !isProbablyEverydayVariable(category.category, normName) || absAmount >= 1500;
+}
+
+function shouldSurfaceUnusualIncome(t: Transaction, category: ReturnType<typeof categorize>) {
+  const abs = Math.abs(t.amount);
+  if (category.costType === 'income') return false;
+  if (abs < 3000) return false;
+  const n = merchantKey(t.description);
+  if (/återbetalning|aterbetalning|refund|retur|swish|utlägg|utlagg|ersättning|ersattning/i.test(n) && abs < 10000) return false;
+  return true;
+}
+
+function uniqueReviewItems(items: ReviewItem[]) {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    const key = `${item.type}|${item.txId || item.recurringId || item.description}|${Math.round(item.amount * 100)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function detectRecurring(transactions: Transaction[], accounts: Account[], rules: Rule[], transferDecisions: Record<string, TransferDecision>): DetectionResult {
   const transfers = matchTransfers(transactions, accounts, transferDecisions);
   const neutralIds = transferTxIds(transfers, transferDecisions);
@@ -94,7 +156,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
     if (cat.costType === 'transfer') continue;
 
     const direction: Direction = t.amount >= 0 ? 'income' : 'expense';
-    if (direction === 'income' && Math.abs(t.amount) > 1000) largePositive.push(t);
+    if (direction === 'income' && Math.abs(t.amount) >= 3000) largePositive.push(t);
 
     const key = groupKey(t, direction);
     if (!key) continue;
@@ -108,6 +170,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
   for (const [rawKey, group] of Object.entries(groups)) {
     const { direction, txs } = group;
     const normName = rawKey.replace(/^(expense|income):/, '');
+    const groupCategory = categorize(direction === 'income' ? txs[txs.length - 1].description : normName, rules);
     const amounts = txs.map(t => Math.abs(t.amount));
     const med = median(amounts);
     const outlierIds = new Set<string>();
@@ -116,15 +179,17 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
       const abs = Math.abs(t.amount);
       if (txs.length > 1 && med > 0 && abs > med * 2.7) {
         outlierIds.add(t.id);
-        reviewItems.push({
-          id: `outlier_${t.id}`,
-          type: 'amount_outlier',
-          txId: t.id,
-          description: t.description,
-          amount: t.amount,
-          date: t.date,
-          note: `Beloppet avviker kraftigt från övriga ${reviewTypeLabel(direction)}er med samma namn. Troligen engångspost eller eftersläp.`,
-        });
+        if (shouldSurfaceOutlier(direction, groupCategory, normName, abs)) {
+          reviewItems.push({
+            id: `outlier_${t.id}`,
+            type: 'amount_outlier',
+            txId: t.id,
+            description: t.description,
+            amount: t.amount,
+            date: t.date,
+            note: `Beloppet avviker kraftigt från övriga ${reviewTypeLabel(direction)}er med samma namn. Troligen engångspost eller eftersläp.`,
+          });
+        }
       }
     }
 
@@ -135,17 +200,20 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
     const duplicateIds = new Set<string>();
     for (const t of clean) {
       const prev = dedup[dedup.length - 1];
-      if (prev && Math.abs(Math.abs(prev.amount) - Math.abs(t.amount)) <= 1 && Math.abs(daysBetween(prev.date, t.date)) <= 4) {
+      const abs = Math.abs(t.amount);
+      if (prev && Math.abs(Math.abs(prev.amount) - abs) <= 1 && Math.abs(daysBetween(prev.date, t.date)) <= 4) {
         duplicateIds.add(t.id);
-        reviewItems.push({
-          id: `dupe_${t.id}`,
-          type: 'duplicate',
-          txId: t.id,
-          description: t.description,
-          amount: t.amount,
-          date: t.date,
-          note: `Liknar en dubbel ${reviewTypeLabel(direction)} nära en annan post med samma belopp. Räknas inte med i normalbeloppet.`,
-        });
+        if (shouldSurfaceDuplicate(direction, groupCategory, normName, abs)) {
+          reviewItems.push({
+            id: `dupe_${t.id}`,
+            type: 'duplicate',
+            txId: t.id,
+            description: t.description,
+            amount: t.amount,
+            date: t.date,
+            note: `Liknar en dubbel ${reviewTypeLabel(direction)} nära en annan post med samma belopp. Räknas inte med i normalbeloppet.`,
+          });
+        }
       } else {
         dedup.push(t);
       }
@@ -170,6 +238,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
     let confidence = Math.round(occScore * 34 + freqInfo.score * 34 + amountScore * 20 + knownRuleBoost + incomeBoost - penalty);
     if (occurrences === 1) confidence = Math.min(confidence, 39);
     if (freqInfo.frequency === 'irregular') confidence = Math.min(confidence, occurrences >= 3 ? 59 : 44);
+    if (direction === 'expense' && cat.costType !== 'fixed' && isProbablyEverydayVariable(cat.category, normName)) confidence = Math.min(confidence, 49);
     confidence = clamp(confidence, 5, 99);
 
     const monthlyAmount = monthlyAmountFor(freqInfo.frequency, meanAmount);
@@ -194,7 +263,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
 
     if (direction === 'income') dedup.forEach(t => recurringIncomeTxIds.add(t.id));
 
-    if (confidence < 50) {
+    if (confidence < 50 && shouldSurfaceLowConfidence(item, direction, cat, normName)) {
       reviewItems.push({
         id: `lowconf_${item.id}`,
         type: 'low_confidence',
@@ -202,8 +271,8 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
         amount: direction === 'income' ? item.monthlyAmount : -item.monthlyAmount,
         date: item.lastDate,
         note: direction === 'income'
-          ? 'Osäkert om inkomsten är återkommande. Bekräfta bara om den ska räknas som normal månadsinkomst.'
-          : 'Osäkert om posten är återkommande. Bekräfta bara om den ska ingå i månadskalkylen.',
+          ? 'Ser nästan ut som återkommande inkomst, men Klirr vill att du bekräftar innan den räknas som normal månadsinkomst.'
+          : 'Ser nästan ut som en återkommande kostnad, men Klirr vill att du bekräftar innan den hamnar i månadskalkylen.',
         recurringId: item.id,
       });
     }
@@ -214,7 +283,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
   for (const t of largePositive) {
     if (recurringIncomeTxIds.has(t.id)) continue;
     const cat = categorize(t.description, rules);
-    if (cat.costType !== 'income') {
+    if (shouldSurfaceUnusualIncome(t, cat)) {
       reviewItems.push({
         id: `income_${t.id}`,
         type: 'unusual_income',
@@ -222,12 +291,14 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
         description: t.description,
         amount: t.amount,
         date: t.date,
-        note: 'Pluspost som inte verkar vara intern överföring eller bekräftad återkommande inkomst. Kontrollera om den ska räknas som inkomst, återbetalning eller något annat.',
+        note: 'Större pluspost som inte verkar vara intern överföring eller bekräftad återkommande inkomst. Kontrollera om den ska räknas som inkomst, återbetalning eller något annat.',
       });
     }
   }
 
   recurring.sort((a, b) => b.confidence - a.confidence || b.monthlyAmount - a.monthlyAmount);
-  reviewItems.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-  return { transfers, recurring, reviewItems };
+  const filteredReviewItems = uniqueReviewItems(reviewItems)
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 30);
+  return { transfers, recurring, reviewItems: filteredReviewItems };
 }
