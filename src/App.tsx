@@ -58,6 +58,58 @@ function getTabLabel(id: TabId) {
   return nav.find(item => item.id === id)?.label || 'Klirr';
 }
 
+function frequencyLabel(frequency?: Frequency) {
+  const labels: Record<Frequency, string> = {
+    monthly: 'Månadsvis',
+    quarterly: 'Kvartalsvis',
+    yearly: 'Årsvis',
+    irregular: 'Oregelbundet',
+  };
+  return frequency ? labels[frequency] || frequency : 'Okänd frekvens';
+}
+
+function statusLabel(status?: 'pending' | 'confirmed' | 'rejected') {
+  if (status === 'confirmed') return 'Bekräftad';
+  if (status === 'rejected') return 'Bortvald';
+  return 'Obekräftad';
+}
+
+function statusTone(status?: 'pending' | 'confirmed' | 'rejected') {
+  if (status === 'confirmed') return 'green';
+  if (status === 'rejected') return 'danger';
+  return 'warn';
+}
+
+function costTypeLabel(costType?: CostType | 'fixed' | 'variable' | 'income') {
+  if (costType === 'fixed') return 'Fast utgift';
+  if (costType === 'variable') return 'Rörlig utgift';
+  if (costType === 'income') return 'Inkomst';
+  if (costType === 'transfer') return 'Intern överföring';
+  if (costType === 'excluded') return 'Borträknad';
+  return 'Okänd typ';
+}
+
+function sourceLabel(source?: 'recurring' | 'manual' | 'variablePlan') {
+  if (source === 'recurring') return 'Återkommande';
+  if (source === 'manual') return 'Manuell';
+  if (source === 'variablePlan') return 'Rörlig plan';
+  return source || '';
+}
+
+function reviewTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    amount_outlier: 'Avvikande belopp',
+    duplicate: 'Möjlig dubblett',
+    low_confidence: 'Osäker återkommande post',
+    unusual_income: 'Oklart plusbelopp',
+    possible_transfer: 'Möjlig intern överföring',
+    import_warning: 'Importvarning',
+    possible_late_payment: 'Möjlig eftersläpning',
+    possible_one_off: 'Möjlig engångspost',
+  };
+  return labels[type] || type;
+}
+
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState() || initialState);
   const [tab, setTab] = useState<TabId>('dashboard');
@@ -268,7 +320,7 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
   }
   return <><PageTitle title="Månadens måsten" subtitle="Fasta kostnader som måste betalas varje månad. Lägg manuella måsten här, inte under inkomster." />
     <MetricCard label="Fasta kostnader totalt" value={fmt(summary.fixedTotal)} />
-    <Card><h3>Alla aktiva måsten</h3><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {i.source}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
+    <Card><h3>Alla aktiva måsten</h3><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {sourceLabel(i.source)}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
     <Card><h3>Redigera manuella måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt.</p><div className="stack">{manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><select className="select frequency-input" value={m.frequency || 'monthly'} onChange={e => updateManual(m.id, { frequency: e.target.value as Frequency })}><option value="monthly">Månad</option><option value="quarterly">Kvartal</option><option value="yearly">År</option><option value="irregular">Tillfällig</option></select><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}{!manualMusts.length && <Empty>Inga manuella måsten ännu.</Empty>}</div></Card>
     <Card><h3>Lägg till fast kostnad manuellt</h3><div className="row"><input className="input" placeholder="Namn" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><input className="input category-input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
   </>;
@@ -373,16 +425,19 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary }: { variable
 
 function RecurringView({ detection, decisions, setDecisions, addRule }: { detection: DetectionResult; decisions: Record<string, RecurringDecision>; setDecisions: (d: Record<string, RecurringDecision>) => void; addRule: (r: Rule) => void }) {
   const items = detection.recurring.filter(r => r.confidence >= 50);
+  const incomeItems = items.filter(r => r.costTypeDefault === 'income').length;
+  const expenseItems = items.length - incomeItems;
   function patch(id: string, p: Partial<RecurringDecision>) { const current: RecurringDecision = decisions[id] || { status: 'pending' }; setDecisions({ ...decisions, [id]: { ...current, ...p } }); }
-  return <><PageTitle title="Återkommande utgifter" subtitle="Bekräfta det Klirr ska räkna med framåt." />
-    <div className="stack">{items.map(r => { const d = decisions[r.id]; const status = d?.status || 'pending'; return <Card key={r.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{r.label}</b><br/><small style={{ color: 'var(--muted)' }}>{r.category} · {r.frequency} · {r.occurrences} förekomster · {r.confidence}% · {r.reason}</small></div><b className="mono">{fmt(d?.monthlyAmountOverride ?? r.monthlyAmount)}/mån</b></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 160 }} value={d?.costType || r.costTypeDefault} onChange={e => patch(r.id, { costType: e.target.value as 'fixed' | 'variable' })}><option value="fixed">Fast</option><option value="variable">Rörlig</option></select><input className="input" style={{ maxWidth: 130 }} type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => patch(r.id, { monthlyAmountOverride: Number(e.target.value) })} /><button className="btn small primary" onClick={() => patch(r.id, { status: 'confirmed' })}>Bekräfta</button><button className="btn small" onClick={() => patch(r.id, { status: 'rejected' })}>Engång</button><button className="btn small" onClick={() => addRule({ id: uid('rule'), matchText: r.normName.split(' ')[0], category: r.category, costType: d?.costType || r.costTypeDefault })}>Spara regel</button><span className={`pill ${status === 'confirmed' ? 'green' : status === 'rejected' ? 'danger' : 'warn'}`}>{status}</span></div></Card>; })}{!items.length && <Empty>Inga säkra återkommande kandidater hittade än.</Empty>}</div></>;
+  return <><PageTitle title="Återkommande inkomster och utgifter" subtitle="Bekräfta vad Klirr ska räkna med framåt. Inkomster räknas inte in förrän du bekräftar dem." />
+    <Card className="soft"><div className="row"><span className="pill green">{incomeItems} möjliga inkomster</span><span className="pill">{expenseItems} möjliga utgifter</span><span className="pill warn">Obekräftade poster behöver kollas</span></div></Card>
+    <div className="stack">{items.map(r => { const d = decisions[r.id]; const status = d?.status || 'pending'; const currentCostType = d?.costType || r.costTypeDefault; const isIncome = currentCostType === 'income'; return <Card key={r.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{r.label}</b><br/><small style={{ color: 'var(--muted)' }}>{r.category} · {costTypeLabel(currentCostType)} · {frequencyLabel(r.frequency)} · {r.occurrences} förekomster · {r.confidence}% · {r.reason}</small></div><b className={`mono ${isIncome ? 'amount-pos' : ''}`}>{isIncome ? '+' : ''}{fmt(d?.monthlyAmountOverride ?? r.monthlyAmount)}/mån</b></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 180 }} value={currentCostType} onChange={e => patch(r.id, { costType: e.target.value as RecurringDecision['costType'] })}><option value="fixed">Fast utgift</option><option value="variable">Rörlig utgift</option><option value="income">Inkomst</option></select><input className="input" style={{ maxWidth: 130 }} type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => patch(r.id, { monthlyAmountOverride: Number(e.target.value) })} /><button className="btn small primary" onClick={() => patch(r.id, { status: 'confirmed' })}>Bekräfta</button><button className="btn small" onClick={() => patch(r.id, { status: 'rejected' })}>Räkna bort</button><button className="btn small" onClick={() => addRule({ id: uid('rule'), matchText: r.normName.split(' ')[0], category: r.category, costType: currentCostType || r.costTypeDefault })}>Spara regel</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!items.length && <Empty>Inga säkra återkommande kandidater hittade än.</Empty>}</div></>;
 }
 
 function ReviewView({ detection, recurringDecisions, setRecurringDecisions }: { detection: DetectionResult; recurringDecisions: Record<string, RecurringDecision>; setRecurringDecisions: (d: Record<string, RecurringDecision>) => void }) {
   function confirm(id?: string) { if (!id) return; setRecurringDecisions({ ...recurringDecisions, [id]: { ...recurringDecisions[id], status: 'confirmed' } }); }
   function reject(id?: string) { if (!id) return; setRecurringDecisions({ ...recurringDecisions, [id]: { ...recurringDecisions[id], status: 'rejected' } }); }
   return <><PageTitle title="Oklara poster" subtitle="Saker som Klirr inte vill räkna in utan att du kontrollerar dem." />
-    <div className="stack">{detection.reviewItems.map(it => <Card className="warn" key={it.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{it.description}</b><br/><small>{it.date} · {it.type}</small><p>{it.note}</p></div><b className="mono">{fmt(Math.abs(it.amount))}</b></div>{it.recurringId && <div className="row"><button className="btn small primary" onClick={() => confirm(it.recurringId)}>Räkna med</button><button className="btn small" onClick={() => reject(it.recurringId)}>Räkna bort</button></div>}</Card>)}{!detection.reviewItems.length && <Empty>Inga oklara poster just nu.</Empty>}</div></>;
+    <div className="stack">{detection.reviewItems.map(it => <Card className="warn" key={it.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{it.description}</b><br/><small>{it.date} · {reviewTypeLabel(it.type)}</small><p>{it.note}</p></div><b className="mono">{fmt(Math.abs(it.amount))}</b></div>{it.recurringId && <div className="row"><button className="btn small primary" onClick={() => confirm(it.recurringId)}>Räkna med</button><button className="btn small" onClick={() => reject(it.recurringId)}>Räkna bort</button></div>}</Card>)}{!detection.reviewItems.length && <Empty>Inga oklara poster just nu.</Empty>}</div></>;
 }
 
 function ScenariosView({ summary, scenarioSummary, state, setState }: { summary: ReturnType<typeof calculateBudget>; scenarioSummary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void }) {
@@ -399,7 +454,7 @@ function TransfersView({ detection, transactions, accounts, decisions, setDecisi
   const tx = new Map(transactions.map(t => [t.id, t])); const acc = new Map(accounts.map(a => [a.id, a.name]));
   function patch(id: string, status: TransferDecision['status']) { setDecisions({ ...decisions, [id]: { status } }); }
   return <><PageTitle title="Interna överföringar" subtitle="Mellan egna konton. Räknas inte som inkomst eller utgift." />
-    <div className="stack">{detection.transfers.map(t => { const d = tx.get(t.debitTxId)!; const c = tx.get(t.creditTxId)!; const status = decisions[t.id]?.status || 'pending'; return <Card key={t.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{acc.get(d.accountId)} → {acc.get(c.accountId)}</b><br/><small>{d.date} / {c.date} · {t.reason} · {t.confidence}%</small></div><b>{fmt(Math.abs(d.amount))}</b></div><div className="row" style={{ marginTop: 10 }}><button className="btn small primary" onClick={() => patch(t.id, 'confirmed')}>Bekräfta</button><button className="btn small" onClick={() => patch(t.id, 'rejected')}>Inte intern</button><span className="pill warn">{status}</span></div></Card>; })}{!detection.transfers.length && <Empty>Inga interna överföringar hittades.</Empty>}</div></>;
+    <div className="stack">{detection.transfers.map(t => { const d = tx.get(t.debitTxId)!; const c = tx.get(t.creditTxId)!; const status = decisions[t.id]?.status || 'pending'; return <Card key={t.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{acc.get(d.accountId)} → {acc.get(c.accountId)}</b><br/><small>{d.date} / {c.date} · {t.reason} · {t.confidence}%</small></div><b>{fmt(Math.abs(d.amount))}</b></div><div className="row" style={{ marginTop: 10 }}><button className="btn small primary" onClick={() => patch(t.id, 'confirmed')}>Bekräfta</button><button className="btn small" onClick={() => patch(t.id, 'rejected')}>Inte intern</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!detection.transfers.length && <Empty>Inga interna överföringar hittades.</Empty>}</div></>;
 }
 
 function IncomeView({ incomes, setIncomes }: { incomes: Income[]; setIncomes: (i: Income[]) => void }) {
@@ -434,7 +489,7 @@ function RulesView({ rules, setRules }: { rules: Rule[]; setRules: (r: Rule[]) =
   const [matchText, setMatchText] = useState(''); const [category, setCategory] = useState(''); const [costType, setCostType] = useState<CostType>('fixed');
   function add() { if (!matchText || !category) return; setRules([...rules, { id: uid('rule'), matchText, category, costType }]); setMatchText(''); setCategory(''); }
   return <><PageTitle title="Regler" subtitle="Regler går före Klirrs automatiska gissning." />
-    <Card>{rules.map(r => <div className="list-line" key={r.id}><span><b>{r.matchText}</b> → {r.category} <span className="pill">{r.costType}</span></span><button className="btn small danger" onClick={() => setRules(rules.filter(x => x.id !== r.id))}>Ta bort</button></div>)}<div className="row" style={{ marginTop: 14 }}><input className="input" placeholder="Text att matcha" value={matchText} onChange={e => setMatchText(e.target.value)} /><input className="input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><select className="select" style={{ maxWidth: 160 }} value={costType} onChange={e => setCostType(e.target.value as CostType)}><option value="fixed">Fast</option><option value="variable">Rörlig</option><option value="transfer">Intern överföring</option><option value="income">Inkomst</option></select><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
+    <Card>{rules.map(r => <div className="list-line" key={r.id}><span><b>{r.matchText}</b> → {r.category} <span className="pill">{costTypeLabel(r.costType)}</span></span><button className="btn small danger" onClick={() => setRules(rules.filter(x => x.id !== r.id))}>Ta bort</button></div>)}<div className="row" style={{ marginTop: 14 }}><input className="input" placeholder="Text att matcha" value={matchText} onChange={e => setMatchText(e.target.value)} /><input className="input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><select className="select" style={{ maxWidth: 160 }} value={costType} onChange={e => setCostType(e.target.value as CostType)}><option value="fixed">Fast utgift</option><option value="variable">Rörlig utgift</option><option value="transfer">Intern överföring</option><option value="income">Inkomst</option><option value="excluded">Borträknad</option></select><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
   </>;
 }
 
