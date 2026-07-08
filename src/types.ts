@@ -92,7 +92,7 @@ export interface RecurringExpense {
   normName: string;
   label: string;
   category: string;
-  costTypeDefault: 'fixed' | 'variable';
+  costTypeDefault: 'fixed' | 'variable' | 'income';
   frequency: Frequency;
   occurrences: number;
   monthlyAmount: number;
@@ -108,7 +108,7 @@ export interface RecurringExpense {
 
 export interface RecurringDecision {
   status: DecisionStatus;
-  costType?: 'fixed' | 'variable';
+  costType?: 'fixed' | 'variable' | 'income';
   category?: string;
   monthlyAmountOverride?: number;
 }
@@ -171,6 +171,7 @@ export interface BudgetSummary {
   fixedItems: BudgetLine[];
   variableItems: BudgetLine[];
   activeRecurring: BudgetLine[];
+  incomeItems: BudgetLine[];
   warnings: string[];
 }
 
