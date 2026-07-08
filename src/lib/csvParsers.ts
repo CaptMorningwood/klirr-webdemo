@@ -15,7 +15,9 @@ function splitLine(line: string, delim: string) {
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') inQuotes = !inQuotes;
+    const next = line[i + 1];
+    if (ch === '"' && inQuotes && next === '"') { cur += '"'; i += 1; }
+    else if (ch === '"') inQuotes = !inQuotes;
     else if (ch === delim && !inQuotes) { out.push(cur.trim().replace(/^"|"$/g, '')); cur = ''; }
     else cur += ch;
   }
@@ -46,6 +48,37 @@ function headerIndex(headers: string[], alternatives: string[]) {
   return low.findIndex(h => alternatives.some(a => h.includes(a)));
 }
 
+function delimiterScore(line: string, delimiter: string) {
+  return splitLine(line, delimiter).length;
+}
+
+function detectDelimiter(line: string) {
+  const candidates = [';', '\t', ','];
+  return candidates
+    .map(delimiter => ({ delimiter, score: delimiterScore(line, delimiter) }))
+    .sort((a, b) => b.score - a.score)[0]?.delimiter || ',';
+}
+
+function looksLikeHeader(headers: string[]) {
+  const joined = headers.join(' ').toLowerCase();
+  const hasAmount = /(belopp|amount|summa|uttag|insättning)/i.test(joined);
+  const hasDate = /(datum|date|bokför|bokf|transaktionsdag|valutadag|booking)/i.test(joined);
+  const hasText = /(beskrivning|description|text|mottagare|namn|avsändare|referens)/i.test(joined);
+  const isSwedbank = /(radnummer|clearingnummer|kontonummer)/i.test(joined) && hasAmount;
+  return isSwedbank || (hasAmount && (hasDate || hasText));
+}
+
+function findCsvHeader(lines: string[]) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const delimiter = detectDelimiter(line);
+    const headers = splitLine(line, delimiter);
+    if (headers.length > 1 && looksLikeHeader(headers)) return { index, delimiter, headers };
+  }
+  const delimiter = detectDelimiter(lines[0] || '');
+  return { index: 0, delimiter, headers: splitLine(lines[0] || '', delimiter) };
+}
+
 export const BANK_FORMATS: { key: BankKey; label: string }[] = [
   { key: 'auto', label: 'Auto-detektera' },
   { key: 'generic', label: 'Generiskt CSV' },
@@ -56,11 +89,11 @@ export const BANK_FORMATS: { key: BankKey; label: string }[] = [
 ];
 
 export function detectBank(text: string): Exclude<BankKey, 'auto'> {
-  const first = text.split(/\r?\n/).find(Boolean)?.toLowerCase() || '';
-  if (first.includes('bokfört saldo') || first.includes('transaktionsdag') || first.includes('clearingnummer')) return 'swedbank';
-  if (first.includes('verifikationsnummer') || (first.includes('bokföringsdatum') && first.includes('saldo'))) return 'seb';
-  if (first.includes('text') && first.includes('saldo') && first.includes(';')) return 'handelsbanken';
-  if (first.includes('booking date') || first.includes('bokföringsdag')) return 'nordea';
+  const sample = text.split(/\r?\n/).slice(0, 30).join(' ').toLowerCase();
+  if (sample.includes('clearingnummer') || sample.includes('kontonummer') || sample.includes('bokfört saldo') || sample.includes('bokf�rt saldo') || sample.includes('transaktionsdag')) return 'swedbank';
+  if (sample.includes('verifikationsnummer') || (sample.includes('bokföringsdatum') && sample.includes('saldo'))) return 'seb';
+  if (sample.includes('text') && sample.includes('saldo') && sample.includes(';')) return 'handelsbanken';
+  if (sample.includes('booking date') || sample.includes('bokföringsdag')) return 'nordea';
   return 'generic';
 }
 
@@ -68,20 +101,20 @@ export function parseCsvToRows(text: string, bankKey: BankKey = 'auto'): ParsedR
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (!lines.length) return [];
   const key = bankKey === 'auto' ? detectBank(text) : bankKey;
-  const delim = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-  const header = splitLine(lines[0], delim);
+  const headerInfo = findCsvHeader(lines);
+  const header = headerInfo.headers;
   const lowerHeader = header.join(' ').toLowerCase();
-  const hasHeader = /(datum|date|belopp|amount|beskrivning|description|text)/i.test(lowerHeader);
+  const hasHeader = looksLikeHeader(header) || /(datum|date|belopp|amount|beskrivning|description|text|bokför|bokf|transaktionsdag)/i.test(lowerHeader);
 
-  const dateIdx = headerIndex(header, ['datum', 'date', 'bokföringsdag', 'bokföringsdatum', 'transaktionsdag', 'booking date']);
-  const descIdx = headerIndex(header, ['beskrivning', 'description', 'text', 'mottagare', 'namn', 'avsändare']);
-  const amountIdx = headerIndex(header, ['belopp', 'amount', 'summa']);
+  const dateIdx = headerIndex(header, ['bokföringsdag', 'bokf�ringsdag', 'bokf', 'transaktionsdag', 'valutadag', 'datum', 'date', 'bokföringsdatum', 'booking date']);
+  const descIdx = headerIndex(header, ['beskrivning', 'description', 'text', 'mottagare', 'namn', 'avsändare', 'avs�ndare', 'referens']);
+  const amountIdx = headerIndex(header, ['belopp', 'amount', 'summa', 'uttag', 'insättning', 'ins�ttning']);
 
   const out: ParsedRow[] = [];
-  const start = hasHeader ? 1 : 0;
+  const start = hasHeader ? headerInfo.index + 1 : 0;
 
   for (const line of lines.slice(start)) {
-    const p = splitLine(line, delim);
+    const p = splitLine(line, headerInfo.delimiter);
     let date = '';
     let description = '';
     let amount = NaN;
@@ -105,7 +138,6 @@ export function parseCsvToRows(text: string, bankKey: BankKey = 'auto'): ParsedR
   return out;
 }
 
-
 export interface CsvTable {
   delimiter: string;
   headers: string[];
@@ -115,19 +147,17 @@ export interface CsvTable {
 
 export function readCsvTable(text: string): CsvTable {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  const delimiter = lines[0]?.includes(';') ? ';' : lines[0]?.includes('\t') ? '\t' : ',';
-  const first = splitLine(lines[0] || '', delimiter);
-  const joined = first.join(' ').toLowerCase();
-  const hasHeader = /(datum|date|belopp|amount|beskrivning|description|text|bokför)/i.test(joined);
-  const headers = hasHeader ? first : first.map((_, i) => `Kolumn ${i + 1}`);
-  const records = lines.slice(hasHeader ? 1 : 0).map(line => splitLine(line, delimiter));
-  return { delimiter, headers, records, hasHeader };
+  const headerInfo = findCsvHeader(lines);
+  const hasHeader = looksLikeHeader(headerInfo.headers);
+  const headers = hasHeader ? headerInfo.headers : headerInfo.headers.map((_, i) => `Kolumn ${i + 1}`);
+  const records = lines.slice(hasHeader ? headerInfo.index + 1 : 0).map(line => splitLine(line, headerInfo.delimiter));
+  return { delimiter: headerInfo.delimiter, headers, records, hasHeader };
 }
 
 export function guessMapping(headers: string[]): { date: string; description: string; amount: string } {
-  const dateIdx = headerIndex(headers, ['datum', 'date', 'bokföringsdag', 'bokföringsdatum', 'transaktionsdag', 'booking date']);
-  const descIdx = headerIndex(headers, ['beskrivning', 'description', 'text', 'mottagare', 'namn', 'avsändare']);
-  const amountIdx = headerIndex(headers, ['belopp', 'amount', 'summa', 'uttag']);
+  const dateIdx = headerIndex(headers, ['bokföringsdag', 'bokf�ringsdag', 'bokf', 'transaktionsdag', 'valutadag', 'datum', 'date', 'bokföringsdatum', 'booking date']);
+  const descIdx = headerIndex(headers, ['beskrivning', 'description', 'text', 'mottagare', 'namn', 'avsändare', 'avs�ndare', 'referens']);
+  const amountIdx = headerIndex(headers, ['belopp', 'amount', 'summa', 'uttag', 'insättning', 'ins�ttning']);
   return {
     date: headers[Math.max(0, dateIdx)] || headers[0] || '',
     description: headers[Math.max(0, descIdx)] || headers[1] || headers[0] || '',
