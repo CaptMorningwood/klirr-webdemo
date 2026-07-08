@@ -37,6 +37,19 @@ const DEFAULT_RULES: Array<{ kw: string; category: string; costType: CostType }>
   { kw: 'överföring', category: 'Intern överföring', costType: 'transfer' },
   { kw: 'insättning från', category: 'Intern överföring', costType: 'transfer' },
   { kw: 'avanza', category: 'Sparande', costType: 'transfer' },
+  { kw: 'lön', category: 'Lön', costType: 'income' },
+  { kw: 'lon', category: 'Lön', costType: 'income' },
+  { kw: 'salary', category: 'Lön', costType: 'income' },
+  { kw: 'arbetsgivare', category: 'Lön', costType: 'income' },
+  { kw: 'barnbidrag', category: 'Barnbidrag', costType: 'income' },
+  { kw: 'försäkringskassan', category: 'Försäkringskassan', costType: 'income' },
+  { kw: 'forsakringskassan', category: 'Försäkringskassan', costType: 'income' },
+  { kw: 'csn', category: 'CSN', costType: 'income' },
+  { kw: 'pension', category: 'Pension', costType: 'income' },
+  { kw: 'skatteverket', category: 'Skatteverket', costType: 'income' },
+  { kw: 'återbetalning skatt', category: 'Skatteverket', costType: 'income' },
+  { kw: 'sjukpenning', category: 'Försäkringskassan', costType: 'income' },
+  { kw: 'föräldrapenning', category: 'Försäkringskassan', costType: 'income' },
 ];
 
 export function categorize(descriptionOrNorm: string, rules: Rule[]) {
