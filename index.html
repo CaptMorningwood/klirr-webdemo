@@ -9,6 +9,58 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Temporary UI-language guard for internal enum values that can leak from React views.
+      // Keep the real source labels in App.tsx in sync as the UI is refactored.
+      const KLIRR_SV_REPLACEMENTS = new Map([
+        ['pending', 'Obekräftad'],
+        ['confirmed', 'Bekräftad'],
+        ['rejected', 'Bortvald'],
+        ['monthly', 'Månadsvis'],
+        ['quarterly', 'Kvartalsvis'],
+        ['yearly', 'Årsvis'],
+        ['irregular', 'Oregelbunden'],
+        ['amount_outlier', 'Avvikande belopp'],
+        ['duplicate', 'Möjlig dubblett'],
+        ['low_confidence', 'Osäker återkommande post'],
+        ['unusual_income', 'Ovanlig pluspost'],
+        ['possible_transfer', 'Möjlig intern överföring'],
+        ['import_warning', 'Importvarning'],
+        ['possible_late_payment', 'Möjlig sen betalning'],
+        ['possible_one_off', 'Möjlig engångspost'],
+        ['Återkommande utgifter', 'Återkommande inkomster och utgifter'],
+      ]);
+
+      function localizeKlirrText(root = document.body) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+          let text = node.nodeValue || '';
+          for (const [from, to] of KLIRR_SV_REPLACEMENTS) {
+            text = text.replaceAll(from, to);
+          }
+          if (text !== node.nodeValue) node.nodeValue = text;
+        }
+        document.querySelectorAll('select').forEach(select => {
+          if (!select.querySelector('option[value="income"]')) {
+            const hasCostTypeOptions = select.querySelector('option[value="fixed"], option[value="variable"]');
+            if (hasCostTypeOptions) {
+              const option = document.createElement('option');
+              option.value = 'income';
+              option.textContent = 'Inkomst';
+              select.appendChild(option);
+            }
+          }
+        });
+      }
+
+      const klirrLanguageObserver = new MutationObserver(() => localizeKlirrText());
+      window.addEventListener('DOMContentLoaded', () => {
+        localizeKlirrText();
+        klirrLanguageObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
