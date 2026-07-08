@@ -1,9 +1,13 @@
 import type { BudgetLine, BudgetSummary, DetectionResult, Income, ManualExpense, RecurringDecision, VariablePlanItem } from '../types';
 
+function toMonthlyAmount(amount: number, frequency?: 'monthly' | 'quarterly' | 'yearly' | 'irregular') {
+  if (frequency === 'yearly') return amount / 12;
+  if (frequency === 'quarterly') return amount / 3;
+  return amount;
+}
+
 function incomeMonthly(i: Income) {
-  if (i.frequency === 'yearly') return i.amount / 12;
-  if (i.frequency === 'quarterly') return i.amount / 3;
-  return i.amount;
+  return toMonthlyAmount(i.amount, i.frequency);
 }
 
 export function calculateBudget(input: {
@@ -42,7 +46,7 @@ export function calculateBudget(input: {
 
   for (const mx of input.manualExpenses) {
     if (!mx.active || off.has(mx.id)) continue;
-    const line: BudgetLine = { id: mx.id, label: mx.label, amount: mx.amount, category: mx.category, source: 'manual' };
+    const line: BudgetLine = { id: mx.id, label: mx.label, amount: toMonthlyAmount(mx.amount, mx.frequency), category: mx.category, source: 'manual', frequency: mx.frequency || 'monthly' }; 
     if (mx.costType === 'fixed') fixedItems.push(line);
     else variableItems.push(line);
   }

@@ -1,7 +1,7 @@
 {
   "name": "klirr-webdemo-vercel",
   "private": true,
-  "version": "0.8.2",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "vite": "latest",
     "typescript": "^5.9.0",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "@supabase/supabase-js": "latest"
   },
   "devDependencies": {
     "@types/react": "latest",

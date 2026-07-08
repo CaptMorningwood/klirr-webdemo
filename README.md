@@ -1,30 +1,11 @@
-# Klirr Web Demo v0.8.2
+# Klirr v1.0 beta foundation
 
-Mobilanpassad webbdemo av Klirr för Vercel.
+Klirr hjälper användaren förstå vad livet kostar varje månad: månadens måsten, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
 
-## Vad finns i den här versionen?
+Den här versionen är byggd för att fungera på två sätt:
 
-- Vite + React + TypeScript
-- Mobilanpassat, färgglatt Klirr-UI
-- Helt fiktiv demo-data
-- Filimport av CSV/TXT
-- Klistra-in-CSV som fallback
-- Förhandsgranskning av import
-- Egna konton och interna överföringar
-- Återkommande utgifter
-- Månadens måsten
-- Manuella måsten
-- Inkomster
-- Rörlig plan
-- Scenario
-- Budget Buddy-chat
-- Export av budgetrapport och transaktioner
-- Lokal lagring i webbläsaren
-- Radera all data
-
-## Integritet i demo
-
-Den här versionen skickar ingen budgetdata till server eller AI-tjänst. Data sparas i webbläsarens localStorage på den enhet som testar appen.
+1. **Demo/lokalt läge** – fungerar direkt utan Supabase eller OpenAI.
+2. **Beta-ready läge** – förberedd för Supabase Auth/databas och riktig AI via Vercel API-routes.
 
 ## Kör lokalt
 
@@ -33,55 +14,44 @@ npm install
 npm run dev
 ```
 
-Öppna sedan den lokala adressen som visas, oftast:
-
-```text
-http://localhost:5173
-```
-
-## Bygg för produktion
+## Deploy till Vercel
 
 ```bash
+npm install
 npm run build
 ```
 
-Vite skapar då en `dist`-mapp.
+Pusha till GitHub och koppla repot till Vercel.
 
-## Deploy till Vercel
+## Miljövariabler
 
-Rekommenderat sätt:
+Kopiera `.env.example` till `.env.local` lokalt eller lägg in samma variabler i Vercel.
 
-1. Skapa ett GitHub-repo.
-2. Ladda upp allt innehåll i den här mappen till repot.
-3. Gå till Vercel.
-4. Välj Add New → Project.
-5. Importera GitHub-repot.
-6. Vercel bör känna igen Vite automatiskt.
-7. Kontrollera:
-   - Framework Preset: Vite
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
-8. Klicka Deploy.
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+```
 
-`vercel.json` finns med för att Single Page App-routing ska fungera.
+Utan nycklar fungerar Klirr fortfarande som lokal demo.
 
-## Viktigt före delning med testpersoner
+## Supabase
 
-Skriv gärna till testpersoner:
+1. Skapa Supabase-projekt.
+2. Kör `supabase/schema.sql` i SQL Editor.
+3. Lägg in `VITE_SUPABASE_URL` och `VITE_SUPABASE_ANON_KEY` i Vercel.
+4. Under Inställningar i Klirr kan användare skapa konto/logga in och spara/hämta molnsnapshot.
 
-> Den här Klirr-demon körs lokalt i din webbläsare. Den skickar inte kontoutdrag till en server. Testa gärna med anonymiserad CSV först. Radera data under Inställningar när du är klar.
+## AI
 
+Vercel API-routes finns i:
 
-## Nytt i v0.8.2
+- `api/budget-buddy.js`
+- `api/suggest-budget.js`
 
-- Mobilanpassad appstruktur.
-- Viktigaste funktionerna ligger längst ner på mobil: Hem, Måsten, Import, Plan och Buddy.
-- Övriga funktioner finns i en sidomeny via menyknappen uppe till höger.
-- Desktop-läget behåller vänstersidomenyn.
+Om `OPENAI_API_KEY` saknas svarar de med lokal fallback. När nyckeln finns används server-side API-koppling, så nyckeln exponeras inte i frontend.
 
+## Viktig status
 
-## v0.8.2
-
-- Inkomstfliken är renodlad till inkomster.
-- Befintliga inkomster kan redigeras, frekvensändras och tas bort.
-- Manuella kostnader hanteras under Månadens måsten.
+Detta är inte en färdig fintech-produkt. Det är en beta foundation. Inför riktig lansering behövs juridisk GDPR-granskning, säkerhetsgranskning, tydlig integritetspolicy, driftansvar och mer robust backend.

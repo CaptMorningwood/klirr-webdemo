@@ -105,6 +105,56 @@ export function parseCsvToRows(text: string, bankKey: BankKey = 'auto'): ParsedR
   return out;
 }
 
+
+export interface CsvTable {
+  delimiter: string;
+  headers: string[];
+  records: string[][];
+  hasHeader: boolean;
+}
+
+export function readCsvTable(text: string): CsvTable {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  const delimiter = lines[0]?.includes(';') ? ';' : lines[0]?.includes('\t') ? '\t' : ',';
+  const first = splitLine(lines[0] || '', delimiter);
+  const joined = first.join(' ').toLowerCase();
+  const hasHeader = /(datum|date|belopp|amount|beskrivning|description|text|bokför)/i.test(joined);
+  const headers = hasHeader ? first : first.map((_, i) => `Kolumn ${i + 1}`);
+  const records = lines.slice(hasHeader ? 1 : 0).map(line => splitLine(line, delimiter));
+  return { delimiter, headers, records, hasHeader };
+}
+
+export function guessMapping(headers: string[]): { date: string; description: string; amount: string } {
+  const dateIdx = headerIndex(headers, ['datum', 'date', 'bokföringsdag', 'bokföringsdatum', 'transaktionsdag', 'booking date']);
+  const descIdx = headerIndex(headers, ['beskrivning', 'description', 'text', 'mottagare', 'namn', 'avsändare']);
+  const amountIdx = headerIndex(headers, ['belopp', 'amount', 'summa', 'uttag']);
+  return {
+    date: headers[Math.max(0, dateIdx)] || headers[0] || '',
+    description: headers[Math.max(0, descIdx)] || headers[1] || headers[0] || '',
+    amount: headers[Math.max(0, amountIdx)] || headers[2] || headers[headers.length - 1] || '',
+  };
+}
+
+export function parseRowsWithMapping(text: string, mapping: { date: string; description: string; amount: string }): ParsedRow[] {
+  const table = readCsvTable(text);
+  const d = table.headers.indexOf(mapping.date);
+  const tx = table.headers.indexOf(mapping.description);
+  const a = table.headers.indexOf(mapping.amount);
+  if (d < 0 || tx < 0 || a < 0) return [];
+  const out: ParsedRow[] = [];
+  for (const record of table.records) {
+    const date = toIsoDate(record[d]);
+    const description = (record[tx] || '').trim();
+    const amount = toAmount(record[a]);
+    if (date && description && Number.isFinite(amount)) out.push({ date, description, amount });
+  }
+  return out;
+}
+
+export function transactionFingerprint(t: Pick<Transaction, 'date' | 'description' | 'amount' | 'accountId'>) {
+  return `${t.accountId}|${t.date}|${t.description.toLowerCase().replace(/\s+/g, ' ').trim()}|${Math.round(t.amount * 100)}`;
+}
+
 export function rowsToTransactions(rows: ParsedRow[], accountId: string): Transaction[] {
   return rows.map(r => ({ id: uid('tx'), accountId, date: r.date, description: r.description, amount: r.amount }));
 }

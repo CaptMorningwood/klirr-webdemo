@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Account, AppState, ChatMessage, CostType, DetectionResult, Frequency, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, VariablePlanItem } from './types';
+import type { Account, AppState, BuddyAction, ChatMessage, CostType, DetectionResult, Frequency, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { buddySuggestions, initialBuddyMessage, makeBuddyReply } from './lib/budgetBuddy';
-import { BANK_FORMATS, type BankKey, detectBank, parseCsvToRows, rowsToTransactions } from './lib/csvParsers';
+import { BANK_FORMATS, type BankKey, detectBank, guessMapping, parseCsvToRows, parseRowsWithMapping, readCsvTable, rowsToTransactions, transactionFingerprint } from './lib/csvParsers';
 import { exportBudgetReport, exportTransactionsCsv } from './lib/exporters';
 import { fmt, fmtSigned, pct, todayIso, uid } from './lib/format';
 import { categorize } from './lib/rulesEngine';
 import { detectRecurring } from './lib/recurrenceEngine';
 import { clearState, loadState, saveState } from './lib/storage';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
+import { AuthSyncPanel } from './components/AuthSyncPanel';
 
 const defaultVariablePlan: VariablePlanItem[] = [
   { id: 'vp_food', label: 'Mat och hushåll', amount: 6000, category: 'Vardag', include: true },
@@ -43,6 +44,7 @@ const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }>
   { id: 'scenarios', label: 'Scenarier', shortLabel: 'Scenario', icon: '🎛️' },
   { id: 'transfers', label: 'Överföringar', shortLabel: 'Flytt', icon: '↔' },
   { id: 'income', label: 'Inkomst', shortLabel: 'Inkomst', icon: '＋' },
+  { id: 'accounts', label: 'Konton', shortLabel: 'Konton', icon: '🏦' },
   { id: 'transactions', label: 'Transaktioner', shortLabel: 'Trans.', icon: '≡' },
   { id: 'rules', label: 'Regler', shortLabel: 'Regler', icon: '⚙' },
   { id: 'settings', label: 'Inställningar', shortLabel: 'Mer', icon: '⋯' },
@@ -145,16 +147,17 @@ export default function App() {
         {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={state.transactions.length > 0} onExport={() => exportBudgetReport(summary, detection)} />}
         {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {tab === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
-        {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
+        {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} summary={summary} />}
         {tab === 'recurring' && <RecurringView detection={detection} decisions={state.recurringDecisions} setDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} addRule={(rule) => setPartial({ rules: [...state.rules, rule] })} />}
         {tab === 'review' && <ReviewView detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
         {tab === 'scenarios' && <ScenariosView summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} />}
         {tab === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
         {tab === 'income' && <IncomeView incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
+        {tab === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} setAccounts={(accounts) => setPartial({ accounts })} />}
         {tab === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
         {tab === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setPartial({ rules })} />}
         {tab === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
-        {tab === 'settings' && <SettingsView onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
+        {tab === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
       </main>
 
       <nav className="mobile-bottom-nav" aria-label="Viktigaste funktioner">
@@ -205,15 +208,31 @@ function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport
 
 function BudgetBuddyView({ state, setState, summary, detection, setTab, setScenarioOff }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void }) {
   const [draft, setDraft] = useState('');
+  const [buddyBusy, setBuddyBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [state.chatMessages]);
-  function send(text: string) {
+  async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || buddyBusy) return;
     const userMsg: ChatMessage = { id: uid('msg'), role: 'user', content: trimmed, createdAt: todayIso() };
-    const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
-    setState({ ...state, chatMessages: [...state.chatMessages, userMsg, reply] });
+    const afterUser = [...state.chatMessages, userMsg];
+    setState({ ...state, chatMessages: afterUser });
     setDraft('');
+    setBuddyBusy(true);
+    try {
+      const context = { summary, reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules };
+      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context }) });
+      const data = await response.json();
+      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined };
+      setState({ ...state, chatMessages: [...afterUser, reply] });
+    } catch {
+      const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
+      setState({ ...state, chatMessages: [...afterUser, { ...reply, content: `${reply.content}
+
+Obs: AI-endpointen kunde inte nås, så detta är lokalt fallback-svar.` }] });
+    } finally {
+      setBuddyBusy(false);
+    }
   }
   function runAction(action: NonNullable<ChatMessage['actions']>[number]) {
     if (action.tab) setTab(action.tab);
@@ -227,7 +246,7 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
     </div>
     <div>
       <div className="row" style={{ marginBottom: 10 }}>{buddySuggestions.map(s => <button key={s} className="btn small" onClick={() => send(s)}>{s}</button>)}</div>
-      <form className="chat-input" onSubmit={e => { e.preventDefault(); send(draft); }}><textarea className="textarea" rows={2} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Fråga Budget Buddy… t.ex. vad ska jag göra först?" /><button className="btn primary" type="submit">Skicka</button></form>
+      <form className="chat-input" onSubmit={e => { e.preventDefault(); send(draft); }}><textarea className="textarea" rows={2} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Fråga Budget Buddy… t.ex. vad ska jag göra först?" /><button className="btn primary" type="submit" disabled={buddyBusy}>{buddyBusy ? 'Tänker…' : 'Skicka'}</button></form>
     </div>
   </Card>;
 }
@@ -237,7 +256,7 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
   const manualMusts = state.manualExpenses.filter(m => m.costType === 'fixed');
   function add() {
     if (!label || !amount) return;
-    const mx: ManualExpense = { id: uid('mx'), label, amount: Number(amount), category, costType: 'fixed', active: true };
+    const mx: ManualExpense = { id: uid('mx'), label, amount: Number(amount), category, costType: 'fixed', active: true, frequency: 'monthly' };
     setState({ ...state, manualExpenses: [...state.manualExpenses, mx] });
     setLabel(''); setAmount('');
   }
@@ -250,17 +269,105 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
   return <><PageTitle title="Månadens måsten" subtitle="Fasta kostnader som måste betalas varje månad. Lägg manuella måsten här, inte under inkomster." />
     <MetricCard label="Fasta kostnader totalt" value={fmt(summary.fixedTotal)} />
     <Card><h3>Alla aktiva måsten</h3><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {i.source}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
-    <Card><h3>Redigera manuella måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt.</p><div className="stack">{manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}{!manualMusts.length && <Empty>Inga manuella måsten ännu.</Empty>}</div></Card>
+    <Card><h3>Redigera manuella måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt.</p><div className="stack">{manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><select className="select frequency-input" value={m.frequency || 'monthly'} onChange={e => updateManual(m.id, { frequency: e.target.value as Frequency })}><option value="monthly">Månad</option><option value="quarterly">Kvartal</option><option value="yearly">År</option><option value="irregular">Tillfällig</option></select><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}{!manualMusts.length && <Empty>Inga manuella måsten ännu.</Empty>}</div></Card>
     <Card><h3>Lägg till fast kostnad manuellt</h3><div className="row"><input className="input" placeholder="Namn" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><input className="input category-input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
   </>;
 }
 
-function VariablePlanView({ variablePlan, setVariablePlan }: { variablePlan: VariablePlanItem[]; setVariablePlan: (p: VariablePlanItem[]) => void }) {
+type BudgetSuggestionMode = 'safe' | 'balanced' | 'boost';
+
+function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggestionMode): { items: VariablePlanItem[]; buffer: number; note: string } {
+  const available = Math.max(0, Math.round(remainingAfterFixed));
+  if (available <= 0) {
+    return {
+      buffer: 0,
+      note: 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska Måsten innan du sätter en rörlig plan.',
+      items: [
+        { id: 'vp_ai_food', label: 'Mat och hushåll', amount: 0, category: 'Vardag', include: true },
+        { id: 'vp_ai_transport', label: 'Transport rörligt', amount: 0, category: 'Transport', include: true },
+        { id: 'vp_ai_fun', label: 'Nöje', amount: 0, category: 'Valfritt', include: true },
+        { id: 'vp_ai_household', label: 'Övrigt hushåll', amount: 0, category: 'Vardag', include: true },
+        { id: 'vp_ai_savings', label: 'Buffert/sparande', amount: 0, category: 'Sparande', include: true },
+      ],
+    };
+  }
+
+  const settings: Record<BudgetSuggestionMode, { reservePct: number; minReserve: number; weights: number[]; note: string }> = {
+    safe: {
+      reservePct: 0.16,
+      minReserve: 1500,
+      weights: [0.58, 0.16, 0.06, 0.10, 0.10],
+      note: 'Tryggt förslag: mer luft, lägre nöje och mer buffert. Bra när månaden känns känslig.',
+    },
+    balanced: {
+      reservePct: 0.10,
+      minReserve: 1000,
+      weights: [0.52, 0.17, 0.11, 0.10, 0.10],
+      note: 'Balanserat förslag: vardag, nöje och sparande får plats utan att hela marginalen äts upp.',
+    },
+    boost: {
+      reservePct: 0.06,
+      minReserve: 700,
+      weights: [0.48, 0.15, 0.17, 0.10, 0.10],
+      note: 'Lite friare förslag: mer utrymme till nöje, men mindre buffert kvar. Använd när läget är stabilt.',
+    },
+  };
+  const cfg = settings[mode];
+  const buffer = Math.min(available, Math.max(cfg.minReserve, Math.round(available * cfg.reservePct)));
+  const spendable = Math.max(0, available - buffer);
+  const labels = [
+    ['Mat och hushåll', 'Vardag'],
+    ['Transport rörligt', 'Transport'],
+    ['Nöje', 'Valfritt'],
+    ['Övrigt hushåll', 'Vardag'],
+    ['Buffert/sparande', 'Sparande'],
+  ] as const;
+  const raw = cfg.weights.map(w => Math.round((spendable * w) / 100) * 100);
+  const diff = spendable - raw.reduce((s, n) => s + n, 0);
+  raw[0] += diff;
+  return {
+    buffer,
+    note: cfg.note,
+    items: labels.map(([label, category], idx) => ({ id: `vp_ai_${mode}_${idx}_${Date.now()}`, label, amount: Math.max(0, raw[idx]), category, include: true })),
+  };
+}
+
+function VariablePlanView({ variablePlan, setVariablePlan, summary }: { variablePlan: VariablePlanItem[]; setVariablePlan: (p: VariablePlanItem[]) => void; summary: ReturnType<typeof calculateBudget> }) {
+  const [mode, setMode] = useState<BudgetSuggestionMode>('balanced');
+  const [suggestion, setSuggestion] = useState<ReturnType<typeof suggestVariableBudget> | null>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
   const total = variablePlan.filter(v => v.include).reduce((s, v) => s + v.amount, 0);
+  const remainingAfterFixed = summary.remainingAfterFixed;
   function update(id: string, patch: Partial<VariablePlanItem>) { setVariablePlan(variablePlan.map(v => v.id === id ? { ...v, ...patch } : v)); }
   function add() { setVariablePlan([...variablePlan, { id: uid('vp'), label: 'Ny rörlig post', amount: 0, category: 'Rörligt', include: true }]); }
-  return <><PageTitle title="Rörlig plan" subtitle="Förslag för pengar du kan styra: mat, nöje, sparande och övrigt." /><MetricCard label="Rörlig plan totalt" value={fmt(total)} />
-    <Card><div className="stack">{variablePlan.map(v => <div className="row" key={v.id}><input type="checkbox" checked={v.include} onChange={e => update(v.id, { include: e.target.checked })} /><input className="input" value={v.label} onChange={e => update(v.id, { label: e.target.value })} /><input className="input" style={{ maxWidth: 130 }} type="number" value={v.amount} onChange={e => update(v.id, { amount: Number(e.target.value) })} /><input className="input" style={{ maxWidth: 150 }} value={v.category} onChange={e => update(v.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => setVariablePlan(variablePlan.filter(x => x.id !== v.id))}>Ta bort</button></div>)}</div><button className="btn" style={{ marginTop: 12 }} onClick={add}>Lägg till rad</button></Card>
+  async function makeSuggestion(nextMode = mode) {
+    setSuggestBusy(true);
+    try {
+      const response = await fetch('/api/suggest-budget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ summary, mode: nextMode }) });
+      const data = await response.json();
+      if (Array.isArray(data.items)) {
+        setSuggestion({
+          buffer: Number(data.buffer || 0),
+          note: data.explanation || 'Budget Buddy skapade ett förslag baserat på kvar efter måsten.',
+          items: data.items.map((item: any, idx: number) => ({ id: `vp_ai_api_${Date.now()}_${idx}`, label: String(item.label || 'Rörlig post'), amount: Number(item.amount || 0), category: String(item.category || 'Rörligt'), include: true })),
+        });
+      } else {
+        setSuggestion(suggestVariableBudget(remainingAfterFixed, nextMode));
+      }
+    } catch {
+      setSuggestion(suggestVariableBudget(remainingAfterFixed, nextMode));
+    } finally {
+      setSuggestBusy(false);
+    }
+  }
+  function applySuggestion() {
+    if (!suggestion) return;
+    setVariablePlan(suggestion.items.map(item => ({ ...item, id: uid('vp_ai') })));
+  }
+  return <><PageTitle title="Rörlig plan" subtitle="Pengarna du kan styra efter månadens måsten: mat, transport, nöje, sparande och övrigt." />
+    <div className="grid grid-3"><MetricCard label="Kvar efter måsten" value={fmtSigned(remainingAfterFixed)} tone={remainingAfterFixed >= 0 ? 'good' : 'bad'} /><MetricCard label="Rörlig plan totalt" value={fmt(total)} /><MetricCard label="Kvar efter plan" value={fmtSigned(summary.remainingAfterPlan)} tone={summary.remainingAfterPlan >= 0 ? 'good' : 'bad'} /></div>
+    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h3>✨ Föreslå budget</h3><p className="hint">Budget Buddy räknar på vad du har kvar efter fasta kostnader och föreslår en rörlig månadsplan. Förslaget ändrar inget förrän du trycker på "Använd förslaget".</p></div><span className="pill green">AI-ready / lokal fallback</span></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 230 }} value={mode} onChange={e => { const next = e.target.value as BudgetSuggestionMode; setMode(next); makeSuggestion(next); }}><option value="safe">Trygg budget</option><option value="balanced">Balanserad budget</option><option value="boost">Lite friare budget</option></select><button className="btn primary" disabled={suggestBusy} onClick={() => makeSuggestion()}>{suggestBusy ? 'Tar fram förslag…' : 'Föreslå budget'}</button>{suggestion && <button className="btn" onClick={applySuggestion}>Använd förslaget</button>}</div>{suggestion && <div className="suggestion-box"><p><b>Budget Buddys förslag:</b> {suggestion.note}</p><p className="hint">Lämnar cirka <b>{fmt(suggestion.buffer)}</b> som extra marginal efter den rörliga planen.</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}<br/><small style={{ color: 'var(--muted)' }}>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}</div></div>}</Card>
+    <Card><h3>Redigera rörlig plan</h3><div className="stack">{variablePlan.map(v => <div className="edit-row variable-edit-row" key={v.id}><label className="toggle-label"><input type="checkbox" checked={v.include} onChange={e => update(v.id, { include: e.target.checked })} /> På</label><input className="input" value={v.label} onChange={e => update(v.id, { label: e.target.value })} /><input className="input money-input" type="number" value={v.amount} onChange={e => update(v.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={v.category} onChange={e => update(v.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => setVariablePlan(variablePlan.filter(x => x.id !== v.id))}>Ta bort</button></div>)}</div><button className="btn" style={{ marginTop: 12 }} onClick={add}>Lägg till rad</button></Card>
   </>;
 }
 
@@ -332,7 +439,7 @@ function RulesView({ rules, setRules }: { rules: Rule[]; setRules: (r: Rule[]) =
 }
 
 function ImportView({ accounts, setAccounts, transactions, setTransactions, loadDemo }: { accounts: Account[]; setAccounts: (a: Account[]) => void; transactions: Transaction[]; setTransactions: (t: Transaction[]) => void; loadDemo: () => void }) {
-  const [pending, setPending] = useState<{ fileName: string; raw: string; rows: ReturnType<typeof parseCsvToRows>; bankKey: BankKey; accountName: string; isOwn: boolean } | null>(null);
+  const [pending, setPending] = useState<{ fileName: string; raw: string; bankKey: BankKey; accountName: string; isOwn: boolean; useExistingAccountId: string; rows: ReturnType<typeof parseCsvToRows>; mapping: { date: string; description: string; amount: string }; duplicateCount: number; skipDuplicates: boolean } | null>(null);
   const [csvText, setCsvText] = useState('');
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -345,18 +452,34 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, load
 2026-06-15;Träningsklubben Medlemskap;-299
 2026-06-24;Matboden City;-840`;
 
-  function prepareImport(raw: string, sourceName = 'inklippt-csv.csv') {
-    if (!raw.trim()) return;
-    const bankKey = detectBank(raw);
-    const rows = parseCsvToRows(raw, bankKey);
+  function countDuplicates(rows: ReturnType<typeof parseCsvToRows>, accountId: string) {
+    if (!accountId) return 0;
+    const existing = new Set(transactions.map(transactionFingerprint));
+    return rowsToTransactions(rows, accountId).filter(t => existing.has(transactionFingerprint(t))).length;
+  }
+
+  function buildPending(raw: string, sourceName: string, bankKey: BankKey, mapping?: { date: string; description: string; amount: string }) {
+    const table = readCsvTable(raw);
+    const guessed = mapping || guessMapping(table.headers);
+    const rows = parseRowsWithMapping(raw, guessed).length ? parseRowsWithMapping(raw, guessed) : parseCsvToRows(raw, bankKey);
+    const existingId = accounts[0]?.id || '';
     setPending({
       fileName: sourceName,
       raw,
-      rows,
       bankKey,
       accountName: sourceName.replace(/\.[^.]+$/, '') || 'Nytt konto',
       isOwn: true,
+      useExistingAccountId: '',
+      rows,
+      mapping: guessed,
+      duplicateCount: existingId ? countDuplicates(rows, existingId) : 0,
+      skipDuplicates: true,
     });
+  }
+
+  function prepareImport(raw: string, sourceName = 'inklippt-csv.csv') {
+    if (!raw.trim()) return;
+    buildPending(raw, sourceName, detectBank(raw));
   }
 
   function handleFile(file?: File) {
@@ -366,37 +489,96 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, load
     reader.readAsText(file);
   }
 
-  function reparse(bankKey: BankKey) {
+  function updatePending(patch: Partial<NonNullable<typeof pending>>) {
     if (!pending) return;
-    setPending({ ...pending, bankKey, rows: parseCsvToRows(pending.raw, bankKey) });
+    const next = { ...pending, ...patch };
+    const rows = patch.mapping || patch.bankKey ? (parseRowsWithMapping(next.raw, next.mapping).length ? parseRowsWithMapping(next.raw, next.mapping) : parseCsvToRows(next.raw, next.bankKey)) : next.rows;
+    const accountId = next.useExistingAccountId || '';
+    setPending({ ...next, rows, duplicateCount: accountId ? countDuplicates(rows, accountId) : 0 });
   }
 
   function confirm() {
     if (!pending || !pending.rows.length) return;
-    const account: Account = { id: uid('acc'), name: pending.accountName || 'Nytt konto', isOwn: pending.isOwn, bankLabel: pending.bankKey };
-    setAccounts([...accounts, account]);
-    setTransactions([...transactions, ...rowsToTransactions(pending.rows, account.id)]);
+    let accountId = pending.useExistingAccountId;
+    let nextAccounts = accounts;
+    if (!accountId) {
+      const account: Account = { id: uid('acc'), name: pending.accountName || 'Nytt konto', isOwn: pending.isOwn, bankLabel: pending.bankKey };
+      accountId = account.id;
+      nextAccounts = [...accounts, account];
+    }
+    const existing = new Set(transactions.map(transactionFingerprint));
+    let imported = rowsToTransactions(pending.rows, accountId);
+    if (pending.skipDuplicates) imported = imported.filter(t => !existing.has(transactionFingerprint(t)));
+    setAccounts(nextAccounts);
+    setTransactions([...transactions, ...imported]);
     setCsvText('');
     setPending(null);
   }
 
-  return <><PageTitle title="Importera" subtitle="Ladda upp en CSV-fil eller klistra in kontoutdrag som text. Allt tolkas lokalt i webbläsaren." />
+  const headers = pending ? readCsvTable(pending.raw).headers : [];
+
+  return <><PageTitle title="Importera" subtitle="Ladda upp CSV, klistra in text eller mappa kolumner manuellt. Allt tolkas lokalt i webbläsaren." />
+    <Card className="privacy-card"><b>Trygg demo:</b> Klirr skickar inte kontoutdrag till server eller AI. All import sker i din webbläsare och sparas lokalt.</Card>
     <div className="grid grid-2">
       <Card><h3>Snabbstart</h3><div className="stack"><p style={{ color: 'var(--muted)' }}>Använd fiktiv demo-data om du bara vill visa Klirr utan riktiga kontoutdrag.</p><button className="btn primary" onClick={loadDemo}>✨ Ladda demo-data</button></div></Card>
       <Card><h3>Importera fil</h3><div className="stack"><p style={{ color: 'var(--muted)' }}>Välj CSV/TXT från dator eller mobil. Testa gärna ett anonymiserat utdrag först.</p><button className="btn primary" onClick={() => fileRef.current?.click()}>Välj CSV-fil</button><input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={e => handleFile(e.target.files?.[0])} /></div></Card>
     </div>
 
-    <Card><h3>Klistra in CSV</h3><p style={{ color: 'var(--muted)' }}>Fallback om filväljaren strular. Formatet kan vara med semikolon eller komma, till exempel Datum;Beskrivning;Belopp.</p><textarea className="textarea" rows={9} placeholder={sampleCsv} value={csvText} onChange={e => setCsvText(e.target.value)} /><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => prepareImport(csvText, 'inklippt-kontoutdrag.csv')}>Analysera inklistrad CSV</button><button className="btn" onClick={() => setCsvText(sampleCsv)}>Fyll med exempel</button><button className="btn ghost" onClick={() => { setCsvText(''); setPending(null); }}>Rensa</button></div></Card>
+    <Card><h3>Klistra in CSV</h3><p style={{ color: 'var(--muted)' }}>Fallback om filväljaren strular. Formatet kan vara med semikolon, tabbar eller komma.</p><textarea className="textarea" rows={9} placeholder={sampleCsv} value={csvText} onChange={e => setCsvText(e.target.value)} /><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => prepareImport(csvText, 'inklippt-kontoutdrag.csv')}>Analysera inklistrad CSV</button><button className="btn" onClick={() => setCsvText(sampleCsv)}>Fyll med exempel</button><button className="btn ghost" onClick={() => { setCsvText(''); setPending(null); }}>Rensa</button></div></Card>
 
-    {pending && <Card><h3>Förhandsgranska import</h3><p>Hittade <b>{pending.rows.length}</b> importerbara rader i <span className="kbd">{pending.fileName}</span>.</p><div className="row"><select className="select" style={{ maxWidth: 240 }} value={pending.bankKey} onChange={e => reparse(e.target.value as BankKey)}>{BANK_FORMATS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}</select><input className="input" value={pending.accountName} onChange={e => setPending({ ...pending, accountName: e.target.value })} /><label className="row" style={{ gap: 6 }}><input type="checkbox" checked={pending.isOwn} onChange={e => setPending({ ...pending, isOwn: e.target.checked })} /> Eget konto</label><button className="btn primary" disabled={!pending.rows.length} onClick={confirm}>Lägg till konto</button></div>{!pending.rows.length && <p style={{ color: 'var(--danger)' }}>Klirr kunde inte läsa några rader. Kontrollera att CSV:n innehåller datum, beskrivning och belopp.</p>}{!!pending.rows.length && <div className="table-wrap" style={{ marginTop: 14 }}><table><thead><tr><th>Datum</th><th>Beskrivning</th><th>Belopp</th></tr></thead><tbody>{pending.rows.slice(0, 8).map((r, i) => <tr key={`${r.date}-${i}`}><td>{r.date}</td><td>{r.description}</td><td className="mono">{fmtSigned(r.amount)}</td></tr>)}</tbody></table></div>}</Card>}
+    {pending && <Card><h3>Förhandsgranska import</h3><p>Hittade <b>{pending.rows.length}</b> importerbara rader i <span className="kbd">{pending.fileName}</span>.</p>
+      <div className="grid grid-2 compact-grid">
+        <label>Bank/format<select className="select" value={pending.bankKey} onChange={e => updatePending({ bankKey: e.target.value as BankKey })}>{BANK_FORMATS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}</select></label>
+        <label>Importera till konto<select className="select" value={pending.useExistingAccountId} onChange={e => updatePending({ useExistingAccountId: e.target.value })}><option value="">Skapa nytt konto</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+        {!pending.useExistingAccountId && <><label>Kontonamn<input className="input" value={pending.accountName} onChange={e => updatePending({ accountName: e.target.value })} /></label><label className="checkbox-card"><input type="checkbox" checked={pending.isOwn} onChange={e => updatePending({ isOwn: e.target.checked })} /> Detta är mitt eget konto</label></>}
+      </div>
+
+      <h4>Kolumnmappning</h4><p className="hint">Om Klirr läser fel kan du välja vilka kolumner som betyder datum, text och belopp.</p>
+      <div className="grid grid-3 compact-grid">
+        <label>Datum<select className="select" value={pending.mapping.date} onChange={e => updatePending({ mapping: { ...pending.mapping, date: e.target.value } })}>{headers.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
+        <label>Beskrivning<select className="select" value={pending.mapping.description} onChange={e => updatePending({ mapping: { ...pending.mapping, description: e.target.value } })}>{headers.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
+        <label>Belopp<select className="select" value={pending.mapping.amount} onChange={e => updatePending({ mapping: { ...pending.mapping, amount: e.target.value } })}>{headers.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
+      </div>
+
+      <div className="row" style={{ marginTop: 12 }}><label className="checkbox-card"><input type="checkbox" checked={pending.skipDuplicates} onChange={e => updatePending({ skipDuplicates: e.target.checked })} /> Hoppa över dubletter {pending.useExistingAccountId && pending.duplicateCount ? `(${pending.duplicateCount} hittade)` : ''}</label><button className="btn primary" disabled={!pending.rows.length} onClick={confirm}>Importera {pending.skipDuplicates ? pending.rows.length - pending.duplicateCount : pending.rows.length} rader</button></div>
+      {!pending.rows.length && <p style={{ color: 'var(--danger)' }}>Klirr kunde inte läsa några rader. Testa kolumnmappningen ovan.</p>}
+      {!!pending.rows.length && <div className="table-wrap" style={{ marginTop: 14 }}><table><thead><tr><th>Datum</th><th>Beskrivning</th><th>Belopp</th></tr></thead><tbody>{pending.rows.slice(0, 8).map((r, i) => <tr key={`${r.date}-${i}`}><td>{r.date}</td><td>{r.description}</td><td className="mono">{fmtSigned(r.amount)}</td></tr>)}</tbody></table></div>}
+    </Card>}
 
     <Card><h3>Importerade konton</h3>{accounts.map(a => <div className="list-line" key={a.id}><span>{a.name}<br/><small style={{ color: 'var(--muted)' }}>{a.bankLabel || 'okänt format'}</small></span><span>{a.isOwn ? 'Eget konto' : 'Externt'}</span></div>)}{!accounts.length && <Empty>Inga konton importerade.</Empty>}<p style={{ color: 'var(--muted)' }}>Importerade transaktioner just nu: <b>{transactions.length}</b>.</p></Card>
   </>;
 }
 
-function SettingsView({ onReset }: { onReset: () => void }) {
-  return <><PageTitle title="Inställningar" subtitle="Den här MVP:n sparar data lokalt i webbläsaren." />
-    <Card><h3>Radera lokal data</h3><p>Detta raderar Klirrs lokala data i denna webbläsare.</p><button className="btn danger" onClick={onReset}>Radera och återställ</button></Card>
-    <Card><h3>Integritet</h3><p>Budget Buddy i denna version är lokal/mockad. Ingen data skickas till en AI-tjänst eller server.</p></Card>
+function AccountsView({ accounts, transactions, setAccounts }: { accounts: Account[]; transactions: Transaction[]; setAccounts: (a: Account[]) => void }) {
+  function patch(id: string, patch: Partial<Account>) { setAccounts(accounts.map(a => a.id === id ? { ...a, ...patch } : a)); }
+  function remove(id: string) { if (transactions.some(t => t.accountId === id)) return; setAccounts(accounts.filter(a => a.id !== id)); }
+  return <><PageTitle title="Konton" subtitle="Markera vilka konton som är dina egna. Det styr interna överföringar." />
+    <Card><div className="stack">{accounts.map(a => <div className="edit-row" key={a.id}><label className="toggle-label"><input type="checkbox" checked={a.isOwn} onChange={e => patch(a.id, { isOwn: e.target.checked })} /> Eget</label><input className="input" value={a.name} onChange={e => patch(a.id, { name: e.target.value })} /><input className="input category-input" value={a.bankLabel || ''} onChange={e => patch(a.id, { bankLabel: e.target.value })} /><span className="pill">{transactions.filter(t => t.accountId === a.id).length} trans.</span><button className="btn small danger" disabled={transactions.some(t => t.accountId === a.id)} onClick={() => remove(a.id)}>Ta bort</button></div>)}{!accounts.length && <Empty>Inga konton ännu. Importera CSV först.</Empty>}</div></Card>
+  </>;
+}
+
+function SettingsView({ state, setState, onReset, loadDemo }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void }) {
+  const [importText, setImportText] = useState('');
+  const exportText = JSON.stringify({ exportedAt: new Date().toISOString(), version: '1.0', state }, null, 2);
+  function copyExport() { navigator.clipboard?.writeText(exportText).catch(() => undefined); }
+  function importState() {
+    try {
+      const parsed = JSON.parse(importText);
+      if (parsed.state?.accounts && parsed.state?.transactions) setState(parsed.state);
+      else if (parsed.accounts && parsed.transactions) setState(parsed);
+      setImportText('');
+    } catch {
+      alert('Kunde inte läsa JSON. Kontrollera att du klistrat in en Klirr-export.');
+    }
+  }
+  return <><PageTitle title="Inställningar" subtitle="Demo, integritet, export och återställning." />
+    <AuthSyncPanel state={state} setState={setState} />
+    <div className="grid grid-2">
+      <Card><h3>Demo-läge</h3><p>Ladda om den fiktiva demoekonomin när du vill visa appen för andra.</p><button className="btn primary" onClick={loadDemo}>✨ Ladda demo-data</button></Card>
+      <Card><h3>Radera lokal data</h3><p>Raderar Klirrs lokala data i denna webbläsare. Detta påverkar inte GitHub/Vercel.</p><button className="btn danger" onClick={onReset}>Radera och återställ</button></Card>
+    </div>
+    <Card><h3>Exportera hela lokala Klirr-datan</h3><p className="hint">Använd detta vid tester: kopiera JSON och skicka till utvecklare om något ser fel ut. Undvik riktig privatdata i delade buggrapporter.</p><textarea className="textarea copy-box" readOnly value={exportText} /><div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={copyExport}>Kopiera JSON</button></div></Card>
+    <Card><h3>Importera Klirr-export</h3><p className="hint">Klistra in en tidigare export för att återskapa ett testläge.</p><textarea className="textarea" rows={7} value={importText} onChange={e => setImportText(e.target.value)} placeholder="Klistra in JSON-export här…" /><div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={importState}>Importera JSON</button></div></Card>
+    <Card><h3>Integritet</h3><p>Klirr v1.0 är förberedd för inloggning, molnsparning och riktig AI, men fungerar fortfarande lokalt utan nycklar. När Supabase/OpenAI är aktiverat ska användaren tydligt informeras om vad som sparas och vad som skickas till AI. Radera/exportera data finns här under Inställningar.</p></Card>
   </>;
 }

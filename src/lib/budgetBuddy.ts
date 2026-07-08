@@ -48,12 +48,14 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
     actions.push({ label: 'Testa kris-scenario', tab: 'scenarios', scenarioOffIds: removable });
   } else if (q.includes('import') || q.includes('kontoutdrag') || q.includes('csv')) {
     content = 'Ladda upp kontoutdrag under Importera. När du har importerat flera konton ska du markera vilka som är dina egna. Då kan Klirr räkna överföringar mellan dina egna konton som interna, inte som inkomst eller utgift.';
-    actions.push({ label: 'Gå till import', tab: 'import' }, { label: 'Visa interna överföringar', tab: 'transfers' });
+    actions.push({ label: 'Gå till import', tab: 'import' }, { label: 'Visa konton', tab: 'accounts' }, { label: 'Visa interna överföringar', tab: 'transfers' });
   } else if (q.includes('regel') || q.includes('kategori')) {
     content = 'Regler är Klirrs sätt att komma ihåg dina beslut. Om du säger “Telia = streaming” eller “Matboden = mat” ska den regeln gå före automatisk gissning nästa gång.';
     actions.push({ label: 'Gå till regler', tab: 'rules' });
   } else {
-    content = `Jag kan hjälpa dig tolka månaden, hitta kostnader att kapa, granska oklara poster och visa var i Klirr du ska gå.\n\nJust nu är din totala månadsplan ${fmt(s.totalMonthlyPlan)} och marginalen efter planen är ${fmtSigned(s.remainingAfterPlan)}. Vad vill du titta på först?`;
+    content = `Jag kan hjälpa dig tolka månaden, hitta kostnader att kapa, granska oklara poster och visa var i Klirr du ska gå.\n\nJag kan också hjälpa dig hitta rätt i appen: Import, Konton, Måsten, Inkomst, Regler eller Scenario.
+
+Just nu är din totala månadsplan ${fmt(s.totalMonthlyPlan)} och marginalen efter planen är ${fmtSigned(s.remainingAfterPlan)}. Vad vill du titta på först?`;
     actions.push({ label: 'Vad ska jag göra först?', message: 'Vad ska jag göra först?' }, { label: 'Förklara min ekonomi', message: 'Förklara min ekonomi' });
   }
 
@@ -67,4 +69,5 @@ export const buddySuggestions = [
   'Vad är oklart?',
   'Gör krisbudget',
   'Hur importerar jag kontoutdrag?',
+  'Hur ändrar jag konton?',
 ];

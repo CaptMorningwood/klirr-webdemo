@@ -131,3 +131,27 @@ tr:last-child td { border-bottom: 0; }
   .bottom-icon { font-size: 20px; line-height: 1; }
   .bottom-badge { position:absolute; top: 5px; right: 9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--warn); color: white; font-size: 10px; display:flex; align-items:center; justify-content:center; border: 2px solid white; }
 }
+
+
+.privacy-card { background: linear-gradient(135deg, rgba(216,255,110,.22), rgba(81,218,255,.18)); border-color: rgba(124,60,255,.16); }
+.checkbox-card { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; background: rgba(255,255,255,.72); font-weight: 800; color: var(--muted); }
+.compact-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 900; color: var(--muted); }
+.copy-box { width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 860px) { .compact-grid label { font-size: 12px; } .copy-box { min-height: 150px; } }
+
+.suggestion-box {
+  margin-top: 14px;
+  border: 1px solid rgba(124,60,255,.18);
+  background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(239,230,255,.74));
+  border-radius: 22px;
+  padding: 14px;
+}
+.variable-edit-row { grid-template-columns: auto minmax(150px, 1fr) 130px 170px auto; }
+
+@media (max-width: 720px) {
+  .variable-edit-row { grid-template-columns: 1fr; }
+  .suggestion-box .list-line { align-items: center; }
+}
+.env-list { display: grid; gap: 8px; margin-top: 12px; }
+.env-list code { display: block; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.72); border: 1px solid rgba(110, 80, 255, .15); overflow-x: auto; }

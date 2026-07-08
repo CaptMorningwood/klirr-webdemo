@@ -14,6 +14,7 @@ export type TabId =
   | 'rules'
   | 'scenarios'
   | 'import'
+  | 'accounts'
   | 'settings';
 
 export interface Account {
@@ -54,6 +55,9 @@ export interface ManualExpense {
   category: string;
   costType: 'fixed' | 'variable';
   active: boolean;
+  frequency?: Frequency;
+  note?: string;
+  endsAt?: string;
 }
 
 export interface VariablePlanItem {
@@ -74,7 +78,7 @@ export interface TransferMatch {
 
 export interface ReviewItem {
   id: string;
-  type: 'amount_outlier' | 'duplicate' | 'low_confidence' | 'unusual_income' | 'possible_transfer' | 'import_warning';
+  type: 'amount_outlier' | 'duplicate' | 'low_confidence' | 'unusual_income' | 'possible_transfer' | 'import_warning' | 'possible_late_payment' | 'possible_one_off';
   description: string;
   amount: number;
   date?: string;
@@ -168,4 +172,10 @@ export interface BudgetSummary {
   variableItems: BudgetLine[];
   activeRecurring: BudgetLine[];
   warnings: string[];
+}
+
+export interface ColumnMapping {
+  date: string;
+  description: string;
+  amount: string;
 }
