@@ -1,4 +1,4 @@
-# Klirr v1.0 beta foundation
+# Klirr v1.0.1 beta foundation
 
 Klirr hjälper användaren förstå vad livet kostar varje månad: månadens måsten, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
 
@@ -55,3 +55,8 @@ Om `OPENAI_API_KEY` saknas svarar de med lokal fallback. När nyckeln finns anv�
 ## Viktig status
 
 Detta är inte en färdig fintech-produkt. Det är en beta foundation. Inför riktig lansering behövs juridisk GDPR-granskning, säkerhetsgranskning, tydlig integritetspolicy, driftansvar och mer robust backend.
+
+
+## v1.0.1 npm registry fix
+
+Denna version innehåller `.npmrc` som tvingar publika npm-registret och saknar `package-lock.json`, så Vercel inte försöker hämta paket från en intern byggmiljö.

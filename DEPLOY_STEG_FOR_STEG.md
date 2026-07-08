@@ -1,4 +1,4 @@
-# Deploy Klirr v1.0 till Vercel
+# Deploy Klirr v1.0.1 till Vercel
 
 1. Packa upp zippen.
 2. Lägg filerna i roten av GitHub-repot.

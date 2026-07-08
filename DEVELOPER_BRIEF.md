@@ -1,4 +1,4 @@
-# Klirr – Developer Brief v1.0
+# Klirr – Developer Brief v1.0.1
 
 ## Produkt
 
