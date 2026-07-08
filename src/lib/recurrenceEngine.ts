@@ -1,4 +1,4 @@
-import type { Account, DetectionResult, RecurringExpense, ReviewItem, Rule, Transaction, TransferDecision } from '../types';
+import type { Account, CostType, DetectionResult, RecurringExpense, ReviewItem, Rule, Transaction, TransferDecision } from '../types';
 import { clamp, daysBetween } from './format';
 import { merchantKey } from './normalize';
 import { categorize } from './rulesEngine';
