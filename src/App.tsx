@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Account, AppState, ChatMessage, CostType, DetectionResult, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, VariablePlanItem } from './types';
+import type { Account, AppState, ChatMessage, CostType, DetectionResult, Frequency, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { buddySuggestions, initialBuddyMessage, makeBuddyReply } from './lib/budgetBuddy';
@@ -114,8 +114,9 @@ export default function App() {
       </aside>
 
       <header className="mobile-topbar">
-        <div>
+        <div className="mobile-brand-stack">
           <div className="mobile-brand">Klirr</div>
+          <div className="mobile-tagline">Vad livet kostar varje månad</div>
           <div className="mobile-context">{getTabLabel(tab)}</div>
         </div>
         <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Öppna meny">☰</button>
@@ -149,7 +150,7 @@ export default function App() {
         {tab === 'review' && <ReviewView detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
         {tab === 'scenarios' && <ScenariosView summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} />}
         {tab === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
-        {tab === 'income' && <IncomeView incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} manualExpenses={state.manualExpenses} setManualExpenses={(manualExpenses) => setPartial({ manualExpenses })} />}
+        {tab === 'income' && <IncomeView incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
         {tab === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
         {tab === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setPartial({ rules })} />}
         {tab === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
@@ -233,11 +234,24 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
 
 function MustsView({ summary, state, setState }: { summary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void }) {
   const [label, setLabel] = useState(''); const [amount, setAmount] = useState(''); const [category, setCategory] = useState('Fast kostnad');
-  function add() { if (!label || !amount) return; const mx: ManualExpense = { id: uid('mx'), label, amount: Number(amount), category, costType: 'fixed', active: true }; setState({ ...state, manualExpenses: [...state.manualExpenses, mx] }); setLabel(''); setAmount(''); }
-  return <><PageTitle title="Månadens måsten" subtitle="Fasta kostnader som måste betalas varje månad." />
+  const manualMusts = state.manualExpenses.filter(m => m.costType === 'fixed');
+  function add() {
+    if (!label || !amount) return;
+    const mx: ManualExpense = { id: uid('mx'), label, amount: Number(amount), category, costType: 'fixed', active: true };
+    setState({ ...state, manualExpenses: [...state.manualExpenses, mx] });
+    setLabel(''); setAmount('');
+  }
+  function updateManual(id: string, patch: Partial<ManualExpense>) {
+    setState({ ...state, manualExpenses: state.manualExpenses.map(m => m.id === id ? { ...m, ...patch } : m) });
+  }
+  function removeManual(id: string) {
+    setState({ ...state, manualExpenses: state.manualExpenses.filter(m => m.id !== id) });
+  }
+  return <><PageTitle title="Månadens måsten" subtitle="Fasta kostnader som måste betalas varje månad. Lägg manuella måsten här, inte under inkomster." />
     <MetricCard label="Fasta kostnader totalt" value={fmt(summary.fixedTotal)} />
-    <Card><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {i.source}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
-    <Card><h3>Lägg till fast kostnad manuellt</h3><div className="row"><input className="input" placeholder="Namn" value={label} onChange={e => setLabel(e.target.value)} /><input className="input" style={{ maxWidth: 150 }} type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><input className="input" style={{ maxWidth: 180 }} placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
+    <Card><h3>Alla aktiva måsten</h3><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {i.source}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
+    <Card><h3>Redigera manuella måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt.</p><div className="stack">{manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}{!manualMusts.length && <Empty>Inga manuella måsten ännu.</Empty>}</div></Card>
+    <Card><h3>Lägg till fast kostnad manuellt</h3><div className="row"><input className="input" placeholder="Namn" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><input className="input category-input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
   </>;
 }
 
@@ -281,12 +295,24 @@ function TransfersView({ detection, transactions, accounts, decisions, setDecisi
     <div className="stack">{detection.transfers.map(t => { const d = tx.get(t.debitTxId)!; const c = tx.get(t.creditTxId)!; const status = decisions[t.id]?.status || 'pending'; return <Card key={t.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{acc.get(d.accountId)} → {acc.get(c.accountId)}</b><br/><small>{d.date} / {c.date} · {t.reason} · {t.confidence}%</small></div><b>{fmt(Math.abs(d.amount))}</b></div><div className="row" style={{ marginTop: 10 }}><button className="btn small primary" onClick={() => patch(t.id, 'confirmed')}>Bekräfta</button><button className="btn small" onClick={() => patch(t.id, 'rejected')}>Inte intern</button><span className="pill warn">{status}</span></div></Card>; })}{!detection.transfers.length && <Empty>Inga interna överföringar hittades.</Empty>}</div></>;
 }
 
-function IncomeView({ incomes, setIncomes, manualExpenses, setManualExpenses }: { incomes: Income[]; setIncomes: (i: Income[]) => void; manualExpenses: ManualExpense[]; setManualExpenses: (m: ManualExpense[]) => void }) {
+function IncomeView({ incomes, setIncomes }: { incomes: Income[]; setIncomes: (i: Income[]) => void }) {
   const [label, setLabel] = useState(''); const [amount, setAmount] = useState('');
-  function addIncome() { if (!label || !amount) return; setIncomes([...incomes, { id: uid('inc'), label, amount: Number(amount), frequency: 'monthly' }]); setLabel(''); setAmount(''); }
-  return <><PageTitle title="Inkomster och manuella poster" subtitle="Lägg in inkomster och kostnader som inte syns i bankdatan." />
-    <Card><h3>Inkomster</h3>{incomes.map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b>{fmt(i.amount)}/mån</b></div>)}<div className="row" style={{ marginTop: 12 }}><input className="input" placeholder="Lön" value={label} onChange={e => setLabel(e.target.value)} /><input className="input" style={{ maxWidth: 140 }} type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><button className="btn primary" onClick={addIncome}>Lägg till</button></div></Card>
-    <Card><h3>Manuella kostnader</h3>{manualExpenses.map(m => <div className="list-line" key={m.id}><span>{m.label}<br/><small>{m.category} · {m.costType}</small></span><b>{fmt(m.amount)}/mån</b></div>)}<button className="btn" onClick={() => setManualExpenses([...manualExpenses, { id: uid('mx'), label: 'Ny manuell kostnad', amount: 0, category: 'Övrigt', costType: 'fixed', active: true }])}>Lägg till kostnad</button></Card>
+  const total = incomes.reduce((sum, i) => sum + (i.frequency === 'yearly' ? i.amount / 12 : i.frequency === 'quarterly' ? i.amount / 3 : i.amount), 0);
+  function addIncome() {
+    if (!label || !amount) return;
+    setIncomes([...incomes, { id: uid('inc'), label, amount: Number(amount), frequency: 'monthly' }]);
+    setLabel(''); setAmount('');
+  }
+  function updateIncome(id: string, patch: Partial<Income>) {
+    setIncomes(incomes.map(i => i.id === id ? { ...i, ...patch } : i));
+  }
+  function removeIncome(id: string) {
+    setIncomes(incomes.filter(i => i.id !== id));
+  }
+  return <><PageTitle title="Inkomster" subtitle="Lägg in och ändra pengar som kommer in. Kostnader hanteras under Måsten eller Rörlig plan." />
+    <MetricCard label="Inkomst per månad" value={fmt(total)} />
+    <Card><h3>Redigera inkomster</h3><p className="hint">Ändra namn, belopp och hur ofta inkomsten kommer. Klirr räknar om år/kvartal till månadsbelopp automatiskt.</p><div className="stack">{incomes.map(i => <div className="edit-row" key={i.id}><input className="input" value={i.label} onChange={e => updateIncome(i.id, { label: e.target.value })} /><input className="input money-input" type="number" value={i.amount} onChange={e => updateIncome(i.id, { amount: Number(e.target.value) })} /><select className="select frequency-input" value={i.frequency} onChange={e => updateIncome(i.id, { frequency: e.target.value as Frequency })}><option value="monthly">Varje månad</option><option value="quarterly">Varje kvartal</option><option value="yearly">Varje år</option><option value="irregular">Oregelbundet</option></select><button className="btn small danger" onClick={() => removeIncome(i.id)}>Ta bort</button></div>)}{!incomes.length && <Empty>Inga inkomster tillagda ännu.</Empty>}</div></Card>
+    <Card><h3>Lägg till inkomst</h3><div className="row" style={{ marginTop: 12 }}><input className="input" placeholder="Lön, barnbidrag, frilansintäkt…" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr" value={amount} onChange={e => setAmount(e.target.value)} /><button className="btn primary" onClick={addIncome}>Lägg till</button></div></Card>
   </>;
 }
 

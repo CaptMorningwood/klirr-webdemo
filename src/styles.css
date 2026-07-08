@@ -56,6 +56,13 @@ button, input, select, textarea { font: inherit; }
 .btn.small { padding: 6px 9px; border-radius: 9px; font-size: 12.5px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
+.hint { color: var(--muted); font-size: 13.5px; margin-top: -4px; }
+.edit-row { display: grid; grid-template-columns: minmax(160px, 1fr) 130px 170px auto; gap: 10px; align-items: center; }
+.edit-row .toggle-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+.money-input { max-width: 150px; }
+.category-input { max-width: 190px; }
+.frequency-input { max-width: 180px; }
+
 .input, .select, .textarea { width: 100%; border: 1px solid var(--border); background: white; color: var(--ink); border-radius: 16px; padding: 11px 12px; outline: none; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(31,111,99,.12); }
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
@@ -87,17 +94,21 @@ tr:last-child td { border-bottom: 0; }
 .mobile-topbar, .mobile-bottom-nav, .mobile-drawer, .drawer-backdrop { display: none; }
 .mobile-menu-btn { border: 1px solid var(--border); background: rgba(255,255,255,.9); border-radius: 16px; width: 44px; height: 44px; cursor: pointer; font-weight: 900; font-size: 22px; color: var(--ink); box-shadow: 0 8px 24px rgba(79,40,164,.08); }
 .drawer-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding: 18px 16px 14px; border-bottom: 1px solid var(--border); }
+.mobile-brand-stack { min-width: 0; }
 .mobile-brand { font-weight: 900; font-size: 27px; letter-spacing: -0.06em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1; }
-.mobile-context { color: var(--muted); font-size: 12px; font-weight: 750; margin-top: 3px; }
+.mobile-tagline { color: var(--ink); font-size: 12px; font-weight: 900; letter-spacing: -0.01em; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mobile-context { display: inline-flex; align-items: center; width: fit-content; color: var(--accent); font-size: 11px; font-weight: 900; margin-top: 5px; padding: 4px 8px; border-radius: 999px; background: rgba(124,60,255,.09); border: 1px solid rgba(124,60,255,.14); }
 @media (max-width: 860px) {
   body { overflow-x: hidden; }
-  .app-shell { display: block; min-height: 100vh; padding-top: 74px; padding-bottom: 92px; }
+  .app-shell { display: block; min-height: 100vh; padding-top: 88px; padding-bottom: 92px; }
   .desktop-sidebar { display: none; }
-  .mobile-topbar { display:flex; position: fixed; z-index: 35; top: 0; left: 0; right: 0; min-height: 72px; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 10px; background: rgba(250,247,255,.82); backdrop-filter: blur(18px); border-bottom: 1px solid rgba(234,223,255,.78); box-shadow: 0 12px 30px rgba(79,40,164,.08); }
+  .mobile-topbar { display:flex; position: fixed; z-index: 35; top: 0; left: 0; right: 0; min-height: 86px; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 10px; background: rgba(250,247,255,.82); backdrop-filter: blur(18px); border-bottom: 1px solid rgba(234,223,255,.78); box-shadow: 0 12px 30px rgba(79,40,164,.08); }
   .main { max-width: none; padding: 14px 14px 4px; width: 100%; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .row { align-items: stretch; }
   .row > .input, .row > .select { min-width: 160px; }
+  .edit-row { grid-template-columns: 1fr; align-items: stretch; padding: 12px; border: 1px solid var(--border); border-radius: 18px; background: rgba(255,255,255,.68); }
+  .money-input, .category-input, .frequency-input { max-width: none; }
   .message { max-width: 92%; }
   .chat-shell { height: calc(100vh - 186px); min-height: 460px; }
   .card { border-radius: 22px; padding: 16px; }
