@@ -1,4 +1,4 @@
-# Klirr v1.0.1 beta foundation
+# Klirr v1.0.2 beta foundation
 
 Klirr hjälper användaren förstå vad livet kostar varje månad: månadens måsten, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
 
@@ -60,3 +60,7 @@ Detta är inte en färdig fintech-produkt. Det är en beta foundation. Inför ri
 ## v1.0.1 npm registry fix
 
 Denna version innehåller `.npmrc` som tvingar publika npm-registret och saknar `package-lock.json`, så Vercel inte försöker hämta paket från en intern byggmiljö.
+
+## v1.0.2 Vercel pnpm fix
+
+Denna version låser projektet till pnpm via `packageManager`, inkluderar `pnpm-lock.yaml` och godkänner `esbuild` i `pnpm-workspace.yaml`. Det gör att Vercel använder pnpm istället för att fastna i `npm install`.

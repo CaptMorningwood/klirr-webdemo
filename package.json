@@ -1,11 +1,12 @@
 {
   "name": "klirr-webdemo-vercel",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
+  "packageManager": "pnpm@11.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --configLoader runner",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
