@@ -32,26 +32,35 @@ const initialState: AppState = {
   chatMessages: [initialBuddyMessage()],
 };
 
-const nav: Array<{ id: TabId; label: string; icon: string }> = [
-  { id: 'dashboard', label: 'Översikt', icon: '⌁' },
-  { id: 'buddy', label: 'Budget Buddy', icon: '✨' },
-  { id: 'musts', label: 'Måsten', icon: '📌' },
-  { id: 'variablePlan', label: 'Rörlig plan', icon: '🧮' },
-  { id: 'recurring', label: 'Återkommande', icon: '🔁' },
-  { id: 'review', label: 'Oklara poster', icon: '⚠️' },
-  { id: 'scenarios', label: 'Scenarier', icon: '🎛️' },
-  { id: 'transfers', label: 'Överföringar', icon: '↔' },
-  { id: 'income', label: 'Inkomst', icon: '＋' },
-  { id: 'transactions', label: 'Transaktioner', icon: '≡' },
-  { id: 'rules', label: 'Regler', icon: '⚙' },
-  { id: 'import', label: 'Importera', icon: '⬆' },
-  { id: 'settings', label: 'Inställningar', icon: '⋯' },
+const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
+  { id: 'dashboard', label: 'Översikt', shortLabel: 'Hem', icon: '⌁' },
+  { id: 'musts', label: 'Måsten', shortLabel: 'Måsten', icon: '📌' },
+  { id: 'import', label: 'Importera', shortLabel: 'Import', icon: '⬆' },
+  { id: 'variablePlan', label: 'Rörlig plan', shortLabel: 'Plan', icon: '🧮' },
+  { id: 'buddy', label: 'Budget Buddy', shortLabel: 'Buddy', icon: '✨' },
+  { id: 'recurring', label: 'Återkommande', shortLabel: 'Återkom.', icon: '🔁' },
+  { id: 'review', label: 'Oklara poster', shortLabel: 'Oklart', icon: '⚠️' },
+  { id: 'scenarios', label: 'Scenarier', shortLabel: 'Scenario', icon: '🎛️' },
+  { id: 'transfers', label: 'Överföringar', shortLabel: 'Flytt', icon: '↔' },
+  { id: 'income', label: 'Inkomst', shortLabel: 'Inkomst', icon: '＋' },
+  { id: 'transactions', label: 'Transaktioner', shortLabel: 'Trans.', icon: '≡' },
+  { id: 'rules', label: 'Regler', shortLabel: 'Regler', icon: '⚙' },
+  { id: 'settings', label: 'Inställningar', shortLabel: 'Mer', icon: '⋯' },
 ];
+
+const primaryMobileTabs: TabId[] = ['dashboard', 'musts', 'import', 'variablePlan', 'buddy'];
+const primaryMobileNav = nav.filter(item => primaryMobileTabs.includes(item.id));
+const drawerNav = nav.filter(item => !primaryMobileTabs.includes(item.id));
+
+function getTabLabel(id: TabId) {
+  return nav.find(item => item.id === id)?.label || 'Klirr';
+}
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState() || initialState);
   const [tab, setTab] = useState<TabId>('dashboard');
   const [loaded, setLoaded] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => { setLoaded(true); }, []);
   useEffect(() => { if (loaded) saveState(state); }, [state, loaded]);
@@ -67,6 +76,11 @@ export default function App() {
     recurring: detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length,
   };
 
+  function selectTab(nextTab: TabId) {
+    setTab(nextTab);
+    setMobileMenuOpen(false);
+  }
+
   function loadDemo() {
     const demo = buildDemoData();
     setState({
@@ -79,19 +93,46 @@ export default function App() {
       rules: demo.rules,
       chatMessages: [initialBuddyMessage()],
     });
-    setTab('dashboard');
+    selectTab('dashboard');
   }
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className="sidebar desktop-sidebar">
         <div className="logo">
           <div className="logo-title">Klirr</div>
           <div className="logo-sub">Vad livet kostar varje månad</div>
         </div>
         <nav className="nav">
           {nav.map(item => (
-            <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>
+            <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => selectTab(item.id)}>
+              <span>{item.icon} {item.label}</span>
+              {!!badges[item.id] && <span className="badge">{badges[item.id]}</span>}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <header className="mobile-topbar">
+        <div>
+          <div className="mobile-brand">Klirr</div>
+          <div className="mobile-context">{getTabLabel(tab)}</div>
+        </div>
+        <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Öppna meny">☰</button>
+      </header>
+
+      {mobileMenuOpen && <div className="drawer-backdrop" onClick={() => setMobileMenuOpen(false)} />}
+      <aside className={`mobile-drawer ${mobileMenuOpen ? 'open' : ''}`} aria-hidden={!mobileMenuOpen}>
+        <div className="drawer-head">
+          <div>
+            <div className="logo-title">Klirr</div>
+            <div className="logo-sub">Fler verktyg</div>
+          </div>
+          <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(false)} aria-label="Stäng meny">×</button>
+        </div>
+        <nav className="nav drawer-nav">
+          {drawerNav.map(item => (
+            <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => selectTab(item.id)}>
               <span>{item.icon} {item.label}</span>
               {!!badges[item.id] && <span className="badge">{badges[item.id]}</span>}
             </button>
@@ -100,8 +141,8 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={setTab} hasData={state.transactions.length > 0} onExport={() => exportBudgetReport(summary, detection)} />}
-        {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={setTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
+        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={state.transactions.length > 0} onExport={() => exportBudgetReport(summary, detection)} />}
+        {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {tab === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
         {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
         {tab === 'recurring' && <RecurringView detection={detection} decisions={state.recurringDecisions} setDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} addRule={(rule) => setPartial({ rules: [...state.rules, rule] })} />}
@@ -112,8 +153,18 @@ export default function App() {
         {tab === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
         {tab === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setPartial({ rules })} />}
         {tab === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
-        {tab === 'settings' && <SettingsView onReset={() => { clearState(); setState(initialState); setTab('dashboard'); }} />}
+        {tab === 'settings' && <SettingsView onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
       </main>
+
+      <nav className="mobile-bottom-nav" aria-label="Viktigaste funktioner">
+        {primaryMobileNav.map(item => (
+          <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => selectTab(item.id)}>
+            <span className="bottom-icon">{item.icon}</span>
+            <span>{item.shortLabel}</span>
+            {!!badges[item.id] && <span className="bottom-badge">{badges[item.id]}</span>}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

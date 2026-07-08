@@ -1,4 +1,4 @@
-# Klirr Web Demo v0.7.1
+# Klirr Web Demo v0.8
 
 Mobilanpassad webbdemo av Klirr för Vercel.
 
@@ -70,3 +70,11 @@ Rekommenderat sätt:
 Skriv gärna till testpersoner:
 
 > Den här Klirr-demon körs lokalt i din webbläsare. Den skickar inte kontoutdrag till en server. Testa gärna med anonymiserad CSV först. Radera data under Inställningar när du är klar.
+
+
+## Nytt i v0.8
+
+- Mobilanpassad appstruktur.
+- Viktigaste funktionerna ligger längst ner på mobil: Hem, Måsten, Import, Plan och Buddy.
+- Övriga funktioner finns i en sidomeny via menyknappen uppe till höger.
+- Desktop-läget behåller vänstersidomenyn.
