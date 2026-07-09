@@ -41,20 +41,21 @@ Utan nycklar fungerar Klirr fortfarande som lokal demo.
 1. Skapa Supabase-projekt.
 2. Kör `supabase/schema.sql` i SQL Editor.
 3. Lägg in `VITE_SUPABASE_URL` och `VITE_SUPABASE_ANON_KEY` i Vercel.
-4. Aktivera Google som provider under Supabase Auth → Providers.
-5. Aktivera Apple som provider under Supabase Auth → Providers.
-6. Lägg till korrekta redirect URLs i Supabase Auth för lokal utveckling, Vercel Preview och produktion, till exempel:
+4. Gå till **Supabase Dashboard → Authentication → Providers**.
+5. Aktivera **Google provider** och lägg in OAuth **Client ID** och **Secret** från Google Cloud Console.
+6. Aktivera **Apple provider** och lägg in OAuth **Client ID** och **Secret** från Apple Developer.
+7. Lägg till korrekta redirect URLs i Supabase Auth för lokal utveckling, Vercel Preview och produktion, till exempel:
    - `http://localhost:5173/**`
    - `https://*.vercel.app/**`
    - `https://din-produktionsdomän.se/**`
-7. Kontrollera att samma miljövariabler finns i Vercel för Preview och Production:
+8. Kontrollera att Vercel har dessa miljövariabler för både Preview och Production:
 
 ```bash
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ```
 
-Under Inställningar i Klirr blir panelen **Mitt Klirr-konto**. Där kan användare logga in med Google, Apple, magisk e-postlänk eller e-post/lösenord och sedan spara, hämta eller radera sin egen molnsnapshot. Utan Supabase-nycklar fungerar Klirr fortfarande i lokalt demo-läge.
+Under Inställningar i Klirr blir panelen **Mitt Klirr-konto**. Där kan användare logga in med Google, Apple, magisk e-postlänk eller e-post/lösenord och sedan spara, hämta eller radera sin egen molnsnapshot. Google- och Apple-knapparna kräver att respektive provider är aktiverad under Supabase Dashboard → Authentication → Providers och att OAuth Client ID/Secret samt redirect URLs är korrekt ifyllda. Utan Supabase-nycklar fungerar Klirr fortfarande i lokalt demo-läge.
 
 ## AI
 
