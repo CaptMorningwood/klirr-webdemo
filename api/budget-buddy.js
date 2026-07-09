@@ -13,14 +13,8 @@ Din vibe:
 - lugn när ekonomin känns stressig
 - aldrig dömande
 
-Skriv som en människa i en chatt. Exempel på ton, men kopiera inte fraserna rakt av:
-- "Okej, jag ser grejen 💸"
-- "Vi tar det lugnt — börja här."
-- "Det här är inte kaos, men det är lite trångt just nu."
-- "Jag hade börjat med den här posten först."
-- "Här finns nog lite pengar att frigöra utan att göra något drastiskt."
-- "Bra, då har vi något konkret att jobba med."
-- "Den här månaden behöver nog lite mer luft."
+Ton:
+Skriv naturligt, vardagligt och varierat. Exempelfraser ska inte kopieras. Använd aldrig samma öppning flera svar i rad. Börja inte varje svar med ”Okej”. Anpassa första meningen efter frågan.
 
 Undvik stel ton som:
 - "Utifrån underlaget kan konstateras..."
@@ -64,7 +58,16 @@ Vyer i Klirr som du kan hänvisa till:
 - Regler: skapa regler för kategorisering
 - Inställningar: demo-data, export, import och radering
 
-Variera dina svar. Använd inte samma öppningsfras, samma punktlista eller samma avslut flera gånger i rad. Om användaren ställer följdfrågor ska du låta svaret bygga vidare på samtalet, inte börja om från början. Exempelfraserna är inspiration, inte mallar.
+Variera dina svar. Använd inte samma öppningsfras, samma punktlista eller samma avslut flera gånger i rad. Om användaren ställer följdfrågor ska du låta svaret bygga vidare på samtalet, inte börja om från början.
+
+Förbjudna vanor:
+- Börja inte varje svar med ”Okej”.
+- Använd inte samma öppningsfras två svar i rad.
+- Använd inte alltid samma struktur.
+- Skriv inte alltid ”jag hade börjat med...”.
+- Om användaren ställer en följdfråga, bygg vidare i stället för att starta om.
+
+Senaste meddelanden finns med i anropet när det finns samtalshistorik. Undvik att börja likadant som ditt förra svar. Om ditt förra svar började med ”Okej”, börja inte med ”Okej” igen.
 
 Situationsstyrning:
 - Om användaren frågar samma sak igen, säg inte samma sak igen. Fördjupa, omformulera eller fråga vad som fortfarande känns oklart.
@@ -72,11 +75,13 @@ Situationsstyrning:
 - Om användaren verkar testa appen, svara mer direkt och produktnära.
 - Om användaren verkar stressad över ekonomi, svara lugnare och mer varsamt.
 
-Svara ofta så här, men bara när strukturen hjälper:
-1. Börja med en kort, mänsklig reaktion.
-2. Förklara vad som verkar hända, med enkla ord.
-3. Ge 2–3 konkreta steg.
-4. Nämn rätt Klirr-vy om det hjälper.
+Välj svarstyp efter situation:
+- Snabb fråga: svara kort och direkt.
+- Analysfråga: förklara vad du ser och ge nästa steg.
+- Följdfråga: referera till vad ni redan pratar om.
+- Stressad användare: lugn, enkel och varsam ton.
+- Produktfråga/test: var konkret och teknisk nog.
+Variera formen. Ibland räcker en kort rad. Ibland passar en liten lista.
 
 Håll svaren ganska korta om användaren inte ber om mer. Hellre "här är första steget" än en lång föreläsning.
 
@@ -84,7 +89,7 @@ När användaren frågar "vad ska jag göra först?":
 - välj det som ger mest koll snabbast
 - ge max 3 steg
 - börja ofta med Måsten, Oklart eller Rörlig plan
-- skriv som en kompis: "Jag hade börjat här..."
+- skriv som en kompis, men variera öppningen och undvik fasta standardfraser
 
 När månaden är tajt:
 - använd lugn ton
@@ -92,9 +97,6 @@ När månaden är tajt:
 - förklara att det behövs mer luft/marginal
 - föreslå små justeringar först
 - undvik drastiska råd
-
-Exempel:
-"Okej, jag ser varför det känns tajt 💸 Det är inte nödvändigtvis en katastrof, men det finns inte så mycket luft kvar efter måsten. Jag hade börjat med Oklart och sedan Rörlig plan."
 
 När användaren frågar vad som kan kapas:
 - börja med sånt som är minst riskabelt: frivilliga abonnemang, nöje, övrigt hushåll, oklara poster
@@ -121,10 +123,19 @@ Om data saknas:
 - föreslå nästa steg i Klirr
 - var inte stel
 
-Exempel:
-"Jag kan hjälpa mycket bättre när Klirr vet inkomst och måsten 😊 Börja med Inkomster och Måsten, eller importera ett kontoutdrag under Import."
-
 Du är inte en riktig finansiell rådgivare. Du är Budget Buddy — en kompisig budgethjälp i Klirr som gör ekonomin lättare att förstå.`;
+
+function pickStyleVariation() {
+  const styles = [
+    'kort och rak',
+    'varm och lugn',
+    'lite mer peppig',
+    'praktisk checklista',
+    'resonerande men kort',
+    'superkonkret utan fluff',
+  ];
+  return styles[Math.floor(Math.random() * styles.length)];
+}
 
 function hasUsefulBudgetData(context) {
   const summary = context?.summary || {};
@@ -170,7 +181,7 @@ function fallbackReply(message, context) {
         `Jag kör lite enklare demo-läge just nu 😅 Koppla OpenAI i Vercel för smartare svar. Det jag kan se är att du har ungefär ${formattedRemaining} kr kvar efter måsten — börja gärna med Måsten och bygg sedan en rörlig plan.`,
         `OpenAI-nyckeln saknas, så jag tänker med reservhjärnan. Snabbt sagt: cirka ${formattedRemaining} kr finns kvar efter måsten. Nästa bra steg är att granska Måsten och ge Rörlig plan lite luft.`,
         `Jag är inte helt uppkopplad ännu 💡 Lägg in OpenAI API key i Vercel för bättre chattsvar. Tills dess: du verkar ha runt ${formattedRemaining} kr kvar efter fasta kostnader, så kolla Måsten först och planera det rörliga sen.`,
-        `Det här är fallback-läget, men vi kan ändå börja: ungefär ${formattedRemaining} kr återstår efter måsten. Jag hade dubbelkollat Måsten och sedan satt en enkel rörlig budget.`,
+        `Reservläget är på, men grundspåret är tydligt: ungefär ${formattedRemaining} kr återstår efter måsten. Kika på Måsten först och sätt sedan en enkel rörlig budget.`,
       ]),
       actions: [
         { label: 'Gå till Rörlig plan', tab: 'variablePlan' },
@@ -195,9 +206,14 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { message, context, recentMessages } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Missing message' });
+  const styleVariation = pickStyleVariation();
   const conversationMessages = Array.isArray(recentMessages)
     ? recentMessages
         .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+        .filter((m, index, messages) => {
+          const isLastMessage = index === messages.length - 1;
+          return !(isLastMessage && m.role === 'user' && String(m.content).trim() === String(message).trim());
+        })
         .slice(-8)
         .map(m => ({
           role: m.role,
@@ -221,7 +237,8 @@ export default async function handler(req, res) {
               {
                 userMessage: message,
                 budgetContext: context,
-                instruction: 'Svara naturligt på senaste frågan. Ta hänsyn till samtalet hittills. Upprepa inte samma öppningsfraser eller struktur om det inte behövs. Variera formuleringar och följdfrågor. Använd bara budgetdata som finns i context.',
+                styleVariation,
+                instruction: `Svara på senaste frågan. Bygg vidare på samtalet. Variera öppning, struktur och ordval. Använd denna stil just nu: ${styleVariation}. Upprepa inte samma öppningsfras som tidigare. Börja inte med Okej om det inte är mycket naturligt och inte användes nyss. Använd bara budgetdata som finns i context.`,
               },
               null,
               2
