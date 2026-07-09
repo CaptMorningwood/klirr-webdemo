@@ -122,6 +122,12 @@ export default function App() {
   const detection = useMemo(() => detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions), [state.transactions, state.accounts, state.rules, state.transferDecisions]);
   const summary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan]);
   const scenarioSummary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, scenarioOff: state.scenarioOff }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan, state.scenarioOff]);
+  const hasAnyBudgetData =
+    state.transactions.length > 0 ||
+    state.incomes.length > 0 ||
+    state.manualExpenses.length > 0 ||
+    state.variablePlan.some(item => item.amount > 0 && item.include) ||
+    Object.keys(state.recurringDecisions).length > 0;
 
   const setPartial = (patch: Partial<AppState>) => setState(prev => ({ ...prev, ...patch }));
   const badges: Partial<Record<TabId, number>> = {
@@ -196,7 +202,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={state.transactions.length > 0} onExport={() => exportBudgetReport(summary, detection)} />}
+        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
         {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {tab === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
         {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} summary={summary} />}
@@ -227,8 +233,8 @@ export default function App() {
 
 function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onExport: () => void }) {
   if (!hasData) {
-    return <><PageTitle title="Välkommen till Klirr" subtitle="Importera bankdata eller ladda demo för att se vad livet kostar varje månad." />
-      <Card><div className="stack"><p>Klirr hjälper dig hitta återkommande kostnader, separera interna överföringar och bygga en framåtblickande månadsplan.</p><div className="row"><button className="btn primary" onClick={loadDemo}>✨ Ladda demo</button><button className="btn" onClick={() => setTab('import')}>Importera CSV</button></div></div></Card></>;
+    return <><PageTitle title="Välkommen till Klirr" subtitle="Importera bankdata, ladda demo eller börja manuellt med inkomster och måsten." />
+      <Card><div className="stack"><p>Klirr hjälper dig förstå vad livet kostar varje månad. Du kan börja snabbt genom att lägga in inkomster och måsten manuellt, eller importera ett kontoutdrag för smartare analys.</p><div className="row"><button className="btn primary" onClick={loadDemo}>✨ Ladda demo</button><button className="btn" onClick={() => setTab('import')}>Importera CSV</button><button className="btn" onClick={() => setTab('income')}>Lägg in inkomst</button><button className="btn" onClick={() => setTab('musts')}>Lägg in måsten</button></div></div></Card></>;
   }
   const fixedPct = summary.totalIncome > 0 ? (summary.fixedTotal / summary.totalIncome) * 100 : 0;
   return <>
@@ -328,12 +334,13 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
 
 type BudgetSuggestionMode = 'safe' | 'balanced' | 'boost';
 
-function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggestionMode): { items: VariablePlanItem[]; buffer: number; note: string } {
+function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggestionMode): { items: VariablePlanItem[]; buffer: number; safetyTotal: number; note: string } {
   const available = Math.max(0, Math.round(remainingAfterFixed));
   if (available <= 0) {
     return {
       buffer: 0,
-      note: 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska Måsten innan du sätter en rörlig plan.',
+      safetyTotal: 0,
+      note: 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska Måsten och inkomster innan du sätter en rörlig plan.',
       items: [
         { id: 'vp_ai_food', label: 'Mat och hushåll', amount: 0, category: 'Vardag', include: true },
         { id: 'vp_ai_transport', label: 'Transport rörligt', amount: 0, category: 'Transport', include: true },
@@ -344,29 +351,31 @@ function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggesti
     };
   }
 
-  const settings: Record<BudgetSuggestionMode, { reservePct: number; minReserve: number; weights: number[]; note: string }> = {
+  const lowSpace = available < 6000;
+  const settings: Record<BudgetSuggestionMode, { label: string; percentages: [number, number, number, number, number, number]; note: string }> = {
     safe: {
-      reservePct: 0.16,
-      minReserve: 1500,
-      weights: [0.58, 0.16, 0.06, 0.10, 0.10],
-      note: 'Tryggt förslag: mer luft, lägre nöje och mer buffert. Bra när månaden känns känslig.',
+      label: 'Trygg budget',
+      percentages: lowSpace ? [50, 12, 3, 8, 17, 10] : [45, 12, 6, 10, 17, 10],
+      note: lowSpace
+        ? 'Tryggt förslag: utrymmet är lågt, så nöje hålls extra lågt och trygghetsdelen prioriteras.'
+        : 'Tryggt förslag: mest buffert/sparande och marginal kvar, med låg nöjesdel och försiktig vardag.',
     },
     balanced: {
-      reservePct: 0.10,
-      minReserve: 1000,
-      weights: [0.52, 0.17, 0.11, 0.10, 0.10],
-      note: 'Balanserat förslag: vardag, nöje och sparande får plats utan att hela marginalen äts upp.',
+      label: 'Balanserad budget',
+      percentages: lowSpace ? [48, 12, 6, 9, 15, 10] : [45, 13, 10, 12, 12, 8],
+      note: lowSpace
+        ? 'Balanserat förslag: fortfarande försiktigt eftersom utrymmet är lågt, men med lite mer vardagsutrymme än Trygg budget.'
+        : 'Balanserat förslag: en mellanväg där vardag, nöje, buffert/sparande och marginal får plats.',
     },
     boost: {
-      reservePct: 0.06,
-      minReserve: 700,
-      weights: [0.48, 0.15, 0.17, 0.10, 0.10],
-      note: 'Lite friare förslag: mer utrymme till nöje, men mindre buffert kvar. Använd när läget är stabilt.',
+      label: 'Lite friare budget',
+      percentages: lowSpace ? [45, 11, 10, 11, 13, 10] : [43, 12, 17, 13, 9, 6],
+      note: lowSpace
+        ? 'Lite friare förslag: ger mest till nöje av lägena, men behåller marginal eftersom utrymmet är lågt.'
+        : 'Lite friare förslag: mer till nöje och övrigt, men med lägst trygghetsdel av lägena.',
     },
   };
-  const cfg = settings[mode];
-  const buffer = Math.min(available, Math.max(cfg.minReserve, Math.round(available * cfg.reservePct)));
-  const spendable = Math.max(0, available - buffer);
+  const cfg = settings[mode] || settings.balanced;
   const labels = [
     ['Mat och hushåll', 'Vardag'],
     ['Transport rörligt', 'Transport'],
@@ -374,13 +383,17 @@ function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggesti
     ['Övrigt hushåll', 'Vardag'],
     ['Buffert/sparande', 'Sparande'],
   ] as const;
-  const raw = cfg.weights.map(w => Math.round((spendable * w) / 100) * 100);
-  const diff = spendable - raw.reduce((s, n) => s + n, 0);
-  raw[0] += diff;
+  const amounts = cfg.percentages.slice(0, 5).map(percentage => Math.round((available * percentage) / 100 / 100) * 100);
+  const targetMargin = Math.round((available * cfg.percentages[5]) / 100 / 100) * 100;
+  const plannedTotal = amounts.reduce((sum, amount) => sum + amount, 0) + targetMargin;
+  amounts[0] = Math.max(0, amounts[0] + available - plannedTotal);
+  const buffer = Math.max(0, available - amounts.reduce((sum, amount) => sum + amount, 0));
+  const safetyTotal = amounts[4] + buffer;
   return {
     buffer,
-    note: cfg.note,
-    items: labels.map(([label, category], idx) => ({ id: `vp_ai_${mode}_${idx}_${Date.now()}`, label, amount: Math.max(0, raw[idx]), category, include: true })),
+    safetyTotal,
+    note: `${cfg.note} Marginal kvar: cirka ${fmt(buffer)}. Total trygghetsdel: cirka ${fmt(safetyTotal)}.`,
+    items: labels.map(([label, category], idx) => ({ id: `vp_ai_${mode}_${idx}_${Date.now()}`, label, amount: Math.max(0, amounts[idx]), category, include: true })),
   };
 }
 
@@ -400,6 +413,7 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary }: { variable
       if (Array.isArray(data.items)) {
         setSuggestion({
           buffer: Number(data.buffer || 0),
+          safetyTotal: Number(data.safetyTotal || 0),
           note: data.explanation || 'Budget Buddy skapade ett förslag baserat på kvar efter måsten.',
           items: data.items.map((item: any, idx: number) => ({ id: `vp_ai_api_${Date.now()}_${idx}`, label: String(item.label || 'Rörlig post'), amount: Number(item.amount || 0), category: String(item.category || 'Rörligt'), include: true })),
         });
@@ -418,7 +432,7 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary }: { variable
   }
   return <><PageTitle title="Rörlig plan" subtitle="Pengarna du kan styra efter månadens måsten: mat, transport, nöje, sparande och övrigt." />
     <div className="grid grid-3"><MetricCard label="Kvar efter måsten" value={fmtSigned(remainingAfterFixed)} tone={remainingAfterFixed >= 0 ? 'good' : 'bad'} /><MetricCard label="Rörlig plan totalt" value={fmt(total)} /><MetricCard label="Kvar efter plan" value={fmtSigned(summary.remainingAfterPlan)} tone={summary.remainingAfterPlan >= 0 ? 'good' : 'bad'} /></div>
-    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h3>✨ Föreslå budget</h3><p className="hint">Budget Buddy räknar på vad du har kvar efter fasta kostnader och föreslår en rörlig månadsplan. Förslaget ändrar inget förrän du trycker på "Använd förslaget".</p></div><span className="pill green">AI-ready / lokal fallback</span></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 230 }} value={mode} onChange={e => { const next = e.target.value as BudgetSuggestionMode; setMode(next); makeSuggestion(next); }}><option value="safe">Trygg budget</option><option value="balanced">Balanserad budget</option><option value="boost">Lite friare budget</option></select><button className="btn primary" disabled={suggestBusy} onClick={() => makeSuggestion()}>{suggestBusy ? 'Tar fram förslag…' : 'Föreslå budget'}</button>{suggestion && <button className="btn" onClick={applySuggestion}>Använd förslaget</button>}</div>{suggestion && <div className="suggestion-box"><p><b>Budget Buddys förslag:</b> {suggestion.note}</p><p className="hint">Lämnar cirka <b>{fmt(suggestion.buffer)}</b> som extra marginal efter den rörliga planen.</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}<br/><small style={{ color: 'var(--muted)' }}>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}</div></div>}</Card>
+    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h3>✨ Föreslå budget</h3><p className="hint">Budget Buddy räknar på vad du har kvar efter fasta kostnader och föreslår en rörlig månadsplan. Förslaget ändrar inget förrän du trycker på "Använd förslaget".</p></div><span className="pill green">AI-ready / lokal fallback</span></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 230 }} value={mode} onChange={e => { const next = e.target.value as BudgetSuggestionMode; setMode(next); makeSuggestion(next); }}><option value="safe">Trygg budget</option><option value="balanced">Balanserad budget</option><option value="boost">Lite friare budget</option></select><button className="btn primary" disabled={suggestBusy} onClick={() => makeSuggestion()}>{suggestBusy ? 'Tar fram förslag…' : 'Föreslå budget'}</button>{suggestion && <button className="btn" onClick={applySuggestion}>Använd förslaget</button>}</div>{suggestion && <div className="suggestion-box"><p><b>Budget Buddys förslag:</b> {suggestion.note}</p><p className="hint">Lämnar cirka <b>{fmt(suggestion.buffer)}</b> som extra marginal efter den rörliga planen. Total trygghetsdel: <b>{fmt(suggestion.safetyTotal)}</b>.</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}<br/><small style={{ color: 'var(--muted)' }}>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}</div></div>}</Card>
     <Card><h3>Redigera rörlig plan</h3><div className="stack">{variablePlan.map(v => <div className="edit-row variable-edit-row" key={v.id}><label className="toggle-label"><input type="checkbox" checked={v.include} onChange={e => update(v.id, { include: e.target.checked })} /> På</label><input className="input" value={v.label} onChange={e => update(v.id, { label: e.target.value })} /><input className="input money-input" type="number" value={v.amount} onChange={e => update(v.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={v.category} onChange={e => update(v.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => setVariablePlan(variablePlan.filter(x => x.id !== v.id))}>Ta bort</button></div>)}</div><button className="btn" style={{ marginTop: 12 }} onClick={add}>Lägg till rad</button></Card>
   </>;
 }
