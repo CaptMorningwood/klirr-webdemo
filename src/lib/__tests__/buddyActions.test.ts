@@ -19,3 +19,21 @@ describe('applyBuddyAction', () => {
     expect(applyBuddyAction(base, action).variablePlan[0].amount).toBe(0);
   });
 });
+
+describe('applyBuddyAction variable plan semantics', () => {
+  it('updates state.variablePlan when confirmed', () => {
+    const action: BuddyProposedAction = { id: 'vp', type: 'update_variable_plan', title: '', description: '', payload: { items: [{ label: 'Mat', amount: 5000, category: 'Mat', include: true }] }, confirmLabel: 'Ja', cancelLabel: 'Nej', status: 'pending' };
+    expect(applyBuddyAction(base, action).variablePlan).toMatchObject([{ label: 'Mat', amount: 5000 }]);
+  });
+
+  it('does not use marginLeft as a total cap', () => {
+    const action: BuddyProposedAction = { id: 'vp', type: 'update_variable_plan', title: '', description: '', payload: { marginLeft: 1000, items: [{ label: 'Mat', amount: 5000, category: 'Mat', include: true }] }, confirmLabel: 'Ja', cancelLabel: 'Nej', status: 'pending' };
+    expect(applyBuddyAction(base, action).variablePlan[0].amount).toBe(5000);
+  });
+
+  it('scales total variable plan down to availableAfterFixed when provided', () => {
+    const action: BuddyProposedAction = { id: 'vp', type: 'update_variable_plan', title: '', description: '', payload: { availableAfterFixed: 5000, items: [{ label: 'Mat', amount: 8000, category: 'Mat', include: true }, { label: 'Nöje', amount: 2000, category: 'Nöje', include: true }] }, confirmLabel: 'Ja', cancelLabel: 'Nej', status: 'pending' };
+    const next = applyBuddyAction(base, action);
+    expect(next.variablePlan.reduce((sum, item) => sum + item.amount, 0)).toBeLessThanOrEqual(5000);
+  });
+});

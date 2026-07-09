@@ -45,7 +45,7 @@ export function applyBuddyActionWithResult(state: AppState, action: BuddyPropose
     const incoming = action.payload.items
       .filter(item => Number.isFinite(Number(item.amount)))
       .map(item => ({ ...item, amount: Math.max(0, Math.round(Number(item.amount))) }));
-    const allowedTotal = Number(action.payload.marginLeft ?? NaN);
+    const allowedTotal = Number(action.payload.availableAfterFixed ?? NaN);
     let items: VariablePlanItem[] = incoming.map((item, index) => {
       const existing = item.id ? state.variablePlan.find(current => current.id === item.id) : state.variablePlan.find(current => current.label.toLowerCase() === item.label.toLowerCase());
       return {

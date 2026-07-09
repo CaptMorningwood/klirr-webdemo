@@ -188,6 +188,7 @@ export type BuddyProposedAction =
       description: string;
       payload: {
         items: Array<{ id?: string; label: string; amount: number; category: string; include: boolean }>;
+        availableAfterFixed?: number;
         marginLeft?: number;
         mode?: 'safe' | 'balanced' | 'free';
         notes?: string;
