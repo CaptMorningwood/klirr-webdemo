@@ -252,7 +252,7 @@ export default function App() {
       <main className="main">
         {!state.onboardingCompleted && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} />}
         {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
-        {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
+        {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} detection={detection} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
         {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} />}
         {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} summary={summary} detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
         {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
@@ -356,10 +356,10 @@ function SectionTabs<T extends string>({ items, active, onChange }: { items: Arr
   return <div className="section-tabs">{items.map(item => <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => onChange(item.id)}>{item.label}{!!item.badge && <span className="badge">{item.badge}</span>}</button>)}</div>;
 }
 
-function PlanView({ active, setActive, summary, scenarioSummary, state, setState, setVariablePlan }: { active: PlanSection; setActive: (s: PlanSection) => void; summary: ReturnType<typeof calculateBudget>; scenarioSummary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void; setVariablePlan: (p: VariablePlanItem[]) => void }) {
+function PlanView({ active, setActive, summary, scenarioSummary, detection, state, setState, setVariablePlan }: { active: PlanSection; setActive: (s: PlanSection) => void; summary: ReturnType<typeof calculateBudget>; scenarioSummary: ReturnType<typeof calculateBudget>; detection: DetectionResult; state: AppState; setState: (s: AppState) => void; setVariablePlan: (p: VariablePlanItem[]) => void }) {
   return <><PageTitle title="Plan" subtitle="Planera vad månaden ska kosta framåt: måsten, rörlig budget och scenarier." />
     <SectionTabs<PlanSection> active={active} onChange={setActive} items={[{ id: 'musts', label: 'Måsten' }, { id: 'variablePlan', label: 'Rörlig plan' }, { id: 'scenarios', label: 'Scenarier' }]} />
-    {active === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
+    {active === 'musts' && <MustsView summary={summary} detection={detection} state={state} setState={setState} />}
     {active === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={setVariablePlan} summary={summary} householdProfile={state.householdProfile} state={state} setState={setState} />}
     {active === 'scenarios' && <ScenariosView summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} />}
   </>;
@@ -469,9 +469,16 @@ Obs: AI-endpointen kunde inte nås, så detta är lokalt fallback-svar.` }] });
   </Card>;
 }
 
-function MustsView({ summary, state, setState }: { summary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void }) {
+function MustsView({ summary, detection, state, setState }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; state: AppState; setState: (s: AppState) => void }) {
   const [label, setLabel] = useState(''); const [amount, setAmount] = useState(''); const [category, setCategory] = useState('Fast kostnad');
   const manualMusts = state.manualExpenses.filter(m => m.costType === 'fixed');
+  const recurringMusts = detection.recurring.filter(r => {
+    const d = state.recurringDecisions[r.id];
+    const status = d?.status || (r.costTypeDefault === 'income' ? 'pending' : (r.confidence >= 70 ? 'confirmed' : 'pending'));
+    const costType = d?.costType || r.costTypeDefault;
+    return costType === 'fixed' && (status === 'confirmed' || status === 'rejected');
+  });
+  const hasMusts = manualMusts.length > 0 || recurringMusts.length > 0;
   function add() {
     if (!label || !amount) return;
     const mx: ManualExpense = { id: uid('mx'), label, amount: Number(amount), category, costType: 'fixed', active: true, frequency: 'monthly' };
@@ -484,10 +491,25 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
   function removeManual(id: string) {
     setState({ ...state, manualExpenses: state.manualExpenses.filter(m => m.id !== id) });
   }
+  function updateRecurring(id: string, patch: Partial<RecurringDecision>) {
+    const current = state.recurringDecisions[id];
+    setState({ ...state, recurringDecisions: { ...state.recurringDecisions, [id]: { ...current, status: 'confirmed', costType: 'fixed', ...patch } } });
+  }
+  function rejectRecurring(id: string) {
+    const current = state.recurringDecisions[id];
+    setState({ ...state, recurringDecisions: { ...state.recurringDecisions, [id]: { ...current, status: 'rejected', costType: current?.costType || 'fixed' } } });
+  }
+  function moveRecurringToVariable(id: string) {
+    const current = state.recurringDecisions[id];
+    setState({ ...state, recurringDecisions: { ...state.recurringDecisions, [id]: { ...current, status: 'confirmed', costType: 'variable' } } });
+  }
   return <><PageTitle title="Månadens måsten" subtitle="Fasta kostnader som måste betalas varje månad. Lägg manuella måsten här, inte under inkomster." />
     <MetricCard label="Fasta kostnader totalt" value={fmt(summary.fixedTotal)} />
-    <Card><h3>Alla aktiva måsten</h3><div className="stack">{summary.fixedItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small style={{ color: 'var(--muted)' }}>{i.category} · {sourceLabel(i.source)}</small></span><span className="mono"><b>{fmt(i.amount)}</b></span></div>)}{!summary.fixedItems.length && <Empty>Inga fasta kostnader bekräftade än.</Empty>}</div></Card>
-    <Card><h3>Redigera manuella måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt.</p><div className="stack">{manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><select className="select frequency-input" value={m.frequency || 'monthly'} onChange={e => updateManual(m.id, { frequency: e.target.value as Frequency })}><option value="monthly">Månad</option><option value="quarterly">Kvartal</option><option value="yearly">År</option><option value="irregular">Tillfällig</option></select><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}{!manualMusts.length && <Empty>Inga manuella måsten ännu.</Empty>}</div></Card>
+    <Card><h3>Redigera måsten</h3><p className="hint">Här lägger du in fasta kostnader som inte syns i kontoutdraget, till exempel kontantbetalningar, delad hyra eller avtal du vill räkna med manuellt. Importerade måsten redigeras som overrides. Kontoutdraget ändras inte.</p><div className="stack">
+      {manualMusts.map(m => <div className="edit-row" key={m.id}><label className="toggle-label"><input type="checkbox" checked={m.active} onChange={e => updateManual(m.id, { active: e.target.checked })} /> På</label><input className="input" value={m.label} onChange={e => updateManual(m.id, { label: e.target.value })} /><input className="input money-input" type="number" value={m.amount} onChange={e => updateManual(m.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={m.category} onChange={e => updateManual(m.id, { category: e.target.value })} /><select className="select frequency-input" value={m.frequency || 'monthly'} onChange={e => updateManual(m.id, { frequency: e.target.value as Frequency })}><option value="monthly">Månad</option><option value="quarterly">Kvartal</option><option value="yearly">År</option><option value="irregular">Tillfällig</option></select><span className="pill">Manuell</span><button className="btn small danger" onClick={() => removeManual(m.id)}>Ta bort</button></div>)}
+      {recurringMusts.map(r => { const d = state.recurringDecisions[r.id]; const status = d?.status || (r.confidence >= 70 ? 'confirmed' : 'pending'); const counted = status !== 'rejected'; return <div className="edit-row" key={r.id}><input className="input" value={d?.labelOverride ?? r.label} onChange={e => updateRecurring(r.id, { labelOverride: e.target.value })} disabled={!counted} /><input className="input money-input" type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => updateRecurring(r.id, { monthlyAmountOverride: Number(e.target.value) })} disabled={!counted} /><input className="input category-input" value={d?.category ?? r.category} onChange={e => updateRecurring(r.id, { category: e.target.value })} disabled={!counted} /><select className="select frequency-input" value={d?.frequencyOverride ?? r.frequency} onChange={e => updateRecurring(r.id, { frequencyOverride: e.target.value as Frequency })} disabled={!counted}><option value="monthly">Månad</option><option value="quarterly">Kvartal</option><option value="yearly">År</option><option value="irregular">Tillfällig</option></select><span className={`pill ${counted ? 'green' : 'danger'}`}>{counted ? 'Importerad/Återkommande' : 'Borträknad · räknas inte'}</span><small>{counted ? `Från bankimport · ${r.confidence}% säkerhet · ${frequencyLabel(d?.frequencyOverride ?? r.frequency)}` : 'Borträknad från månadsplanen. Kontoutdraget finns kvar.'}</small>{counted ? <><button className="btn small" onClick={() => moveRecurringToVariable(r.id)}>Flytta till rörlig</button><button className="btn small danger" onClick={() => rejectRecurring(r.id)}>Räkna bort</button></> : <button className="btn small" onClick={() => updateRecurring(r.id, { status: 'confirmed' })}>Räkna med igen</button>}</div>; })}
+      {!hasMusts && <Empty>Inga fasta kostnader bekräftade än. Lägg till en manuell fast kostnad eller bekräfta importerade återkommande utgifter.</Empty>}
+    </div></Card>
     <Card><h3>Lägg till fast kostnad manuellt</h3><div className="row"><input className="input" placeholder="Namn" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr/mån" value={amount} onChange={e => setAmount(e.target.value)} /><input className="input category-input" placeholder="Kategori" value={category} onChange={e => setCategory(e.target.value)} /><button className="btn primary" onClick={add}>Lägg till</button></div></Card>
   </>;
 }
