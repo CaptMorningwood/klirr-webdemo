@@ -24,13 +24,48 @@ Undvik stel ton som:
 - "Användaren bör..."
 - "Marginalen är låg" om du kan säga "det blir lite lite luft kvar" på ett mer mänskligt sätt.
 
-Emoji-regel:
-- Använd gärna emojis när det passar.
-- Normal nivå: 1–4 emojis per svar.
-- Om svaret är positivt eller praktiskt kan du använda fler små markörer, till exempel 💸, ✅, 💡, 🧾, 📌, 📊, 🫶, 😅, 🙌.
-- Använd inte emojis i varje mening.
-- Om användaren verkar ledsen, panikslagen eller i kris: använd max 0–1 väldigt varsam emoji.
-- Emojis ska förstärka känslan, inte ersätta innehåll.
+Emoji-policy:
+Budget Buddy ska använda emojis ganska ofta, men naturligt.
+Normalnivå: 2–6 emojis per svar.
+Korta svar kan ha 1–3 emojis.
+Längre svar kan ha 3–7 emojis.
+Använd gärna 💸, ✅, 💡, 🧾, 📌, 📊, 🫶, 😅, 🙌, 🎄, 🎁, 🚌, 🍝, 🏠 när det passar.
+Använd inte emoji i varje mening.
+Använd inte samma emoji-kombination varje gång.
+Om ämnet är stressigt, använd mjukare emojis och färre, men ta inte bort dem helt.
+Emojis ska förstärka känslan, inte ersätta innehåll.
+
+Kontrollfrågor:
+Du får gärna ställa en kort kontrollfråga innan du ger ett skarpt råd om svaret beror på användarens preferens, hushåll, tidshorisont eller kommande utgifter.
+Exempel:
+- “Vill du att jag räknar tryggt eller lite mer flexibelt här?”
+- “Ska jag anta att julklappar ska in i budgeten redan nu?”
+- “Är målet att överleva månaden, bygga buffert eller hitta pengar till något särskilt?”
+- “Vill du att jag räknar på hela hushållet eller bara din del?”
+
+Men:
+- Ställ inte kontrollfrågor hela tiden.
+- Om du kan ge ett rimligt preliminärt svar, ge först ett kort svar och avsluta med en fråga.
+- Max 1 kontrollfråga per svar, om användaren inte uttryckligen vill resonera mer.
+
+Proaktiv budgethjälp:
+Om datum eller månad finns i context, tänk på kommande säsongskostnader.
+Exempel:
+- julklappar och decemberkostnader inför höst/vinter
+- skolstart inför augusti/september
+- semester/sommar inför maj–juli
+- vinterkläder inför höst
+- bilkostnader om bilen nämns
+- födelsedagar om användaren nämnt barn/familj
+Du får nämna detta som en försiktig fråga, inte som ett krav.
+Exempel:
+“Nu när julen närmar sig lite längre fram — vill du lägga undan en liten rad för julklappar redan nu? 🎁”
+
+Exempel på typ av beteende, kopiera inte formuleringarna exakt:
+- Om användaren frågar om budgetförslag i juli/augusti: nämn försiktigt semester/skolstart om relevant.
+- Om det är höst: fråga om julklappar eller vinterkostnader ska planeras.
+- Om hushållsprofil finns: använd den i resonemanget.
+- Om marginalen är låg: fråga om användaren vill prioritera buffert eller vardagsluft.
 
 Ditt jobb i Klirr:
 - hjälpa användaren fatta vad månaden kostar
@@ -127,14 +162,20 @@ Du är inte en riktig finansiell rådgivare. Du är Budget Buddy — en kompisig
 
 function pickStyleVariation() {
   const styles = [
-    'kort och rak',
-    'varm och lugn',
-    'lite mer peppig',
-    'praktisk checklista',
-    'resonerande men kort',
-    'superkonkret utan fluff',
+    'varm och praktisk med några emojis',
+    'peppig men tydlig',
+    'lugn och stöttande',
+    'kort men personlig',
+    'resonerande med en kontrollfråga om det behövs',
+    'kompisig och konkret',
   ];
   return styles[Math.floor(Math.random() * styles.length)];
+}
+
+
+function pickEmojiDensity() {
+  const emojiDensities = ['normal', 'lite mer', 'varm men sparsam'];
+  return emojiDensities[Math.floor(Math.random() * emojiDensities.length)];
 }
 
 function hasUsefulBudgetData(context) {
@@ -162,9 +203,9 @@ function fallbackReply(message, context) {
       source: 'local-fallback',
       message: pickRandom([
         'Jag behöver lite mer att gå på innan jag kan hjälpa på riktigt 😊 Lägg in inkomst och måsten — eller importera ett kontoutdrag under Import — så tar vi det därifrån.',
-        'Just nu ser jag för lite budgetdata för att säga något smart. Börja gärna med Inkomster och Måsten, eller klistra in kontoutdrag under Import, så kan jag hjälpa mer konkret.',
+        'Just nu ser jag för lite budgetdata för att säga något smart 😊 Börja gärna med Inkomster och Måsten, eller klistra in kontoutdrag under Import, så kan jag hjälpa mer konkret 💸',
         'Vi behöver ge Klirr lite mer att jobba med först 💡 Lägg in inkomsten och de viktigaste måstena, så kan jag börja hitta vad som gör månaden tajt.',
-        'Jag saknar själva kartan över månaden än så länge. Fyll i Inkomster och Måsten eller importera kontoutdrag, så kan vi reda ut nästa steg tillsammans.',
+        'Jag saknar själva kartan över månaden än så länge 🧾 Fyll i Inkomster och Måsten eller importera kontoutdrag, så kan vi reda ut nästa steg tillsammans ✅',
       ]),
       actions: [
         { label: 'Lägg in inkomst', tab: 'income' },
@@ -179,9 +220,9 @@ function fallbackReply(message, context) {
       source: 'local-fallback',
       message: pickRandom([
         `Jag kör lite enklare demo-läge just nu 😅 Koppla OpenAI i Vercel för smartare svar. Det jag kan se är att du har ungefär ${formattedRemaining} kr kvar efter måsten — börja gärna med Måsten och bygg sedan en rörlig plan.`,
-        `OpenAI-nyckeln saknas, så jag tänker med reservhjärnan. Snabbt sagt: cirka ${formattedRemaining} kr finns kvar efter måsten. Nästa bra steg är att granska Måsten och ge Rörlig plan lite luft.`,
+        `Jag kör lite enklare hjärna just nu 😅 Men jag kan ändå hjälpa dig få koll: cirka ${formattedRemaining} kr finns kvar efter måsten. Börja med Måsten och Rörlig plan ✅`,
         `Jag är inte helt uppkopplad ännu 💡 Lägg in OpenAI API key i Vercel för bättre chattsvar. Tills dess: du verkar ha runt ${formattedRemaining} kr kvar efter fasta kostnader, så kolla Måsten först och planera det rörliga sen.`,
-        `Reservläget är på, men grundspåret är tydligt: ungefär ${formattedRemaining} kr återstår efter måsten. Kika på Måsten först och sätt sedan en enkel rörlig budget.`,
+        `Reservläget är på 💡 men grundspåret är tydligt: ungefär ${formattedRemaining} kr återstår efter måsten. Kika på Måsten först och sätt sedan en enkel rörlig budget 💸`,
       ]),
       actions: [
         { label: 'Gå till Rörlig plan', tab: 'variablePlan' },
@@ -194,8 +235,8 @@ function fallbackReply(message, context) {
     source: 'local-fallback',
     message: pickRandom([
       'Ajdå, Budget Buddy tappade tråden en sekund 😅 Testa igen om en stund, eller fortsätt kika runt i Klirr så länge.',
-      'Något strulade när jag skulle svara. Prova gärna igen — ibland räcker det med ett nytt försök.',
-      'Jag fick inte ihop ett AI-svar just nu. Om det brådskar kan du börja med Måsten eller Rörlig plan medan jag samlar mig.',
+      'Något strulade när jag skulle svara 😅 Prova gärna igen — ibland räcker det med ett nytt försök 🙌',
+      'Jag fick inte ihop ett AI-svar just nu 🧾 Om det brådskar kan du börja med Måsten eller Rörlig plan medan jag samlar mig ✅',
       'Hoppsan, där blev det tekniskt knas. Skicka frågan igen om en stund så gör jag ett nytt försök.',
     ]),
     actions: [],
@@ -207,6 +248,9 @@ export default async function handler(req, res) {
   const { message, context, recentMessages } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Missing message' });
   const styleVariation = pickStyleVariation();
+  const emojiDensity = pickEmojiDensity();
+  const currentDate = req.body?.currentDate || new Date().toISOString();
+  const currentMonth = Number(req.body?.currentMonth) || new Date(currentDate).getMonth() + 1;
   const conversationMessages = Array.isArray(recentMessages)
     ? recentMessages
         .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
@@ -237,8 +281,12 @@ export default async function handler(req, res) {
               {
                 userMessage: message,
                 budgetContext: context,
+                recentMessages: conversationMessages,
+                currentDate,
+                currentMonth,
                 styleVariation,
-                instruction: `Svara på senaste frågan. Bygg vidare på samtalet. Variera öppning, struktur och ordval. Använd denna stil just nu: ${styleVariation}. Upprepa inte samma öppningsfras som tidigare. Börja inte med Okej om det inte är mycket naturligt och inte användes nyss. Använd bara budgetdata som finns i context.`,
+                emojiDensity,
+                instruction: `Svara naturligt och varierat. Använd emojis tydligt men inte överdrivet. Våga ställa en kontrollfråga om ett bättre svar kräver användarens preferens eller tidshorisont. Om du kan ge ett preliminärt svar, gör det först och ställ sedan en kort fråga. Bygg vidare på samtalet och undvik malliga öppningar. Använd denna stil just nu: ${styleVariation}. Emoji-nivå just nu: ${emojiDensity}. Även vid sparsam nivå ska minst 1 emoji användas om svaret inte gäller allvarlig kris. Upprepa inte samma öppningsfras som tidigare. Börja inte med Okej om det inte är mycket naturligt och inte användes nyss. Använd bara budgetdata som finns i context.`,
               },
               null,
               2
