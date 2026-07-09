@@ -127,7 +127,42 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   actions?: BuddyAction[];
+  proposedAction?: BuddyProposedAction;
 }
+
+export type BuddyProposedAction =
+  | {
+      id: string;
+      type: 'update_income';
+      title: string;
+      description: string;
+      payload: {
+        incomeId?: string;
+        label: string;
+        amount: number;
+        frequency: 'monthly';
+        source?: 'manual' | 'buddy';
+        notes?: string;
+      };
+      confirmLabel: string;
+      cancelLabel: string;
+      status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
+    }
+  | {
+      id: string;
+      type: 'update_variable_plan';
+      title: string;
+      description: string;
+      payload: {
+        items: Array<{ id?: string; label: string; amount: number; category: string; include: boolean }>;
+        marginLeft?: number;
+        mode?: 'safe' | 'balanced' | 'free';
+        notes?: string;
+      };
+      confirmLabel: string;
+      cancelLabel: string;
+      status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
+    };
 
 export interface BuddyAction {
   label: string;
@@ -173,6 +208,7 @@ export interface AppState {
   transferDecisions: Record<string, TransferDecision>;
   scenarioOff: string[];
   chatMessages: ChatMessage[];
+  onboardingCompleted: boolean;
   householdProfile?: HouseholdProfile;
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStatus?: SubscriptionStatus;

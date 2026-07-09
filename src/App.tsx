@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Account, AppState, BuddyAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
+import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
@@ -11,6 +11,9 @@ import { categorize } from './lib/rulesEngine';
 import { detectRecurring } from './lib/recurrenceEngine';
 import { getEntitlements } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
+import { applyBuddyAction, findPendingBuddyAction } from './lib/buddyActions';
+import { detectBuddyActionIntent } from './lib/buddyActionIntents';
+import { estimateSwedishNetSalary } from './lib/taxEstimate';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
 
@@ -33,6 +36,7 @@ const initialState: AppState = {
   transferDecisions: {},
   scenarioOff: [],
   chatMessages: [initialBuddyMessage()],
+  onboardingCompleted: false,
   householdProfile: { ...defaultHouseholdProfile, householdType: 'single' },
   subscriptionPlan: 'pro',
   subscriptionStatus: 'active',
@@ -181,6 +185,7 @@ export default function App() {
       variablePlan: demo.variablePlan,
       rules: demo.rules,
       chatMessages: [initialBuddyMessage()],
+      onboardingCompleted: true,
     });
     selectTab('dashboard');
   }
@@ -231,12 +236,13 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
-        {tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
-        {tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} />}
-        {tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
-        {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
-        {tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
+        {!state.onboardingCompleted && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} />}
+        {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
+        {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
+        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} />}
+        {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
+        {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
+        {state.onboardingCompleted && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false }); selectTab('dashboard'); }} />}
       </main>
 
       <nav className="mobile-bottom-nav" aria-label="Viktigaste funktioner">
@@ -250,6 +256,44 @@ export default function App() {
       </nav>
     </div>
   );
+}
+
+
+function OnboardingView({ initialState, state, setState, loadDemo, setTab }: { initialState: AppState; state: AppState; setState: (s: AppState) => void; loadDemo: () => void; setTab: (t: TabId) => void }) {
+  const [step, setStep] = useState(0);
+  const [profile, setProfile] = useState<HouseholdProfile>(normalizeHouseholdProfile(state.householdProfile));
+  const [netIncome, setNetIncome] = useState(state.incomes[0]?.amount ? String(state.incomes[0].amount) : '');
+  const [grossIncome, setGrossIncome] = useState('');
+  const grossIncomeNumber = Number(grossIncome);
+  const estimatedNet = Number.isFinite(grossIncomeNumber) && grossIncomeNumber > 0 ? estimateSwedishNetSalary({ grossMonthly: grossIncomeNumber }).netMonthly : 0;
+  const [musts, setMusts] = useState<Array<{ label: string; amount: string; category: string }>>([
+    { label: 'Hyra/boende', amount: '', category: 'Boende' },
+    { label: 'Lån/skulder', amount: '', category: 'Skulder' },
+    { label: 'El', amount: '', category: 'El' },
+    { label: 'Försäkringar', amount: '', category: 'Försäkring' },
+    { label: 'Mobil/bredband', amount: '', category: 'Kommunikation' },
+    { label: 'Övriga fasta kostnader', amount: '', category: 'Fast kostnad' },
+  ]);
+  const [mode, setMode] = useState<BudgetSuggestionMode>('balanced');
+  const incomeAmount = Number(netIncome) || estimatedNet || 0;
+  const fixedTotal = musts.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const suggestion = suggestVariableBudget({ available: incomeAmount - fixedTotal, mode, householdProfile: profile });
+  function finish(nextTab: TabId) {
+    const incomes: Income[] = incomeAmount > 0 ? [{ id: uid('inc_onboarding'), label: 'Lön efter skatt', amount: Math.round(incomeAmount), frequency: 'monthly' }] : [];
+    const manualExpenses: ManualExpense[] = musts.filter(item => Number(item.amount) > 0).map(item => ({ id: uid('mx_onboarding'), label: item.label, amount: Math.round(Number(item.amount)), category: item.category, costType: 'fixed', active: true, frequency: 'monthly' }));
+    setState({ ...initialState, ...state, householdProfile: profile, incomes, manualExpenses, variablePlan: suggestion.items.map(item => ({ ...item, id: uid('vp_onboarding') })), onboardingCompleted: true });
+    setTab(nextTab);
+  }
+  function skip() { setState({ ...state, onboardingCompleted: true }); setTab('dashboard'); }
+  return <><PageTitle title="Kom igång med Klirr" subtitle="Bygg en första månadsbudget på några minuter — helt utan CSV." />
+    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between' }}><b>Steg {step + 1} av 6</b><button className="btn small" onClick={skip}>Hoppa över</button></div></Card>
+    {step === 0 && <Card><h3>Hur vill du börja?</h3><div className="row"><button className="btn primary" onClick={() => setStep(1)}>Börja manuellt</button><button className="btn" onClick={() => { skip(); setTab('import'); }}>Importera kontoutdrag</button><button className="btn" onClick={loadDemo}>Ladda demo</button></div></Card>}
+    {step === 1 && <Card><h3>Hushåll</h3><div className="grid grid-3"><label>Vuxna<input className="input" type="number" min={1} value={profile.adults} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, adults: Number(e.target.value) }))} /></label><label>Barn<input className="input" type="number" min={0} value={profile.children} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, children: Number(e.target.value) }))} /></label><label>Tonåringar<input className="input" type="number" min={0} value={profile.teens} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, teens: Number(e.target.value) }))} /></label></div><div className="grid grid-2" style={{ marginTop: 12 }}><select className="select" value={profile.foodAmbition} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, foodAmbition: e.target.value as FoodAmbition }))}><option value="budget">Matnivå: budget</option><option value="normal">Matnivå: normal</option><option value="comfortable">Matnivå: bekväm</option></select><select className="select" value={profile.transportNeed} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, transportNeed: e.target.value as TransportNeed }))}><option value="low">Transport: lågt</option><option value="normal">Transport: normalt</option><option value="high">Transport: högt</option></select></div><button className="btn primary" onClick={() => setStep(2)}>Nästa</button></Card>}
+    {step === 2 && <Card><h3>Inkomst</h3><div className="grid grid-2"><input className="input" type="number" placeholder="Månadsinkomst efter skatt" value={netIncome} onChange={e => setNetIncome(e.target.value)} /><input className="input" type="number" placeholder="Eller bruttolön för uppskattning" value={grossIncome} onChange={e => setGrossIncome(e.target.value)} /></div>{estimatedNet > 0 && <p className="hint">Grovt uppskattat efter skatt: <b>{fmt(estimatedNet)}</b> med cirka 32% skatt.</p>}<button className="btn primary" onClick={() => setStep(3)}>Nästa</button></Card>}
+    {step === 3 && <Card><h3>Måsten</h3><div className="stack">{musts.map((item, i) => <div className="edit-row" key={item.label}><input className="input" value={item.label} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, label: e.target.value } : m))} /><input className="input money-input" type="number" placeholder="kr/mån" value={item.amount} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, amount: e.target.value } : m))} /></div>)}</div><button className="btn primary" onClick={() => setStep(4)}>Nästa</button></Card>}
+    {step === 4 && <Card><h3>Rörlig budget</h3><select className="select" value={mode} onChange={e => setMode(e.target.value as BudgetSuggestionMode)}><option value="safe">Trygg</option><option value="balanced">Balanserad</option><option value="boost">Lite friare</option></select><p className="hint">Kvar efter måsten: <b>{fmtSigned(incomeAmount - fixedTotal)}</b>. {suggestion.note}</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}</span><b className="mono">{fmt(item.amount)}</b></div>)}</div><button className="btn primary" onClick={() => setStep(5)}>Nästa</button></Card>}
+    {step === 5 && <Card><h3>Klar ✅</h3><p>Första budgeten är redo: inkomst {fmt(incomeAmount)}, måsten {fmt(fixedTotal)} och rörlig plan {fmt(suggestion.items.reduce((sum, item) => sum + item.amount, 0))}.</p><div className="row"><button className="btn primary" onClick={() => finish('dashboard')}>Gå till Översikt</button><button className="btn" onClick={() => finish('buddy')}>Prata med Budget Buddy</button></div></Card>}
+  </>;
 }
 
 function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onExport: () => void }) {
@@ -317,7 +361,7 @@ function MoreView({ active, setActive, state, setState, onReset, loadDemo }: { a
   return <><PageTitle title="Mer / Inställningar" subtitle="Regler, export, sync, demo-data och inställningar." />
     <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }]} />
     {active === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setState({ ...state, rules })} />}
-    {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} />}
+    {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} restartOnboarding={() => setState({ ...state, onboardingCompleted: false })} />}
   </>;
 }
 
@@ -326,25 +370,41 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
   const [buddyBusy, setBuddyBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [state.chatMessages]);
+
+  function updateActionStatus(actionId: string, status: BuddyProposedAction['status'], baseState = state) {
+    return { ...baseState, chatMessages: baseState.chatMessages.map(m => m.proposedAction?.id === actionId ? { ...m, proposedAction: { ...m.proposedAction, status } as BuddyProposedAction } : m) };
+  }
+  function applyOrCancel(action: BuddyProposedAction, intent: 'confirm' | 'cancel', baseState = state) {
+    const nextBase = intent === 'confirm' ? applyBuddyAction(updateActionStatus(action.id, 'applied', baseState), action) : updateActionStatus(action.id, 'cancelled', baseState);
+    const msg: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: intent === 'confirm' ? action.type === 'update_income' ? `Klart — jag uppdaterade inkomsten till ${fmt(action.payload.amount)}/mån ✅` : 'Klart — jag uppdaterade den rörliga planen ✅' : action.type === 'update_income' ? 'Ingen fara, jag låter inkomsten vara som den är 👍' : 'Ingen fara, jag behåller den rörliga planen som den är 👍' };
+    setState({ ...nextBase, chatMessages: [...nextBase.chatMessages, msg] });
+  }
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || buddyBusy) return;
+    const pending = findPendingBuddyAction(state);
+    const intent = pending ? detectBuddyActionIntent(trimmed) : null;
     const userMsg: ChatMessage = { id: uid('msg'), role: 'user', content: trimmed, createdAt: todayIso() };
-    const afterUser = [...state.chatMessages, userMsg];
-    setState({ ...state, chatMessages: afterUser });
+    const afterUserState = { ...state, chatMessages: [...state.chatMessages, userMsg] };
     setDraft('');
+    if (pending && intent) {
+      applyOrCancel(pending, intent, afterUserState);
+      return;
+    }
+    setState(afterUserState);
     setBuddyBusy(true);
     try {
       const currentDate = new Date().toISOString();
-      const context = { summary, householdProfile: normalizeHouseholdProfile(state.householdProfile), reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
+      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
       const data = await response.json();
-      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined };
-      setState({ ...state, chatMessages: [...afterUser, reply] });
+      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction: data.proposedAction };
+      setState({ ...state, chatMessages: [...afterUserState.chatMessages, reply] });
     } catch {
       const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
-      setState({ ...state, chatMessages: [...afterUser, { ...reply, content: `${reply.content}
+      setState({ ...state, chatMessages: [...afterUserState.chatMessages, { ...reply, content: `${reply.content}
 
 Obs: AI-endpointen kunde inte nås, så detta är lokalt fallback-svar.` }] });
     } finally {
@@ -356,14 +416,18 @@ Obs: AI-endpointen kunde inte nås, så detta är lokalt fallback-svar.` }] });
     if (action.scenarioOffIds) setScenarioOff(action.scenarioOffIds);
     if (action.message) send(action.message);
   }
+  function actionSummary(action: BuddyProposedAction) {
+    if (action.type === 'update_income') return <div className="stack"><div className="list-line"><span>{action.payload.label}</span><b className="mono">{fmt(action.payload.amount)}/mån</b></div>{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
+    return <div className="stack">{action.payload.items.map(item => <div className="list-line" key={item.id || item.label}><span>{item.label}<br/><small>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
+  }
   return <Card className="chat-shell">
-    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '5px 0 0', color: 'var(--muted)' }}>Din ekonomiska rådgivar-kompis i Klirr. Den kan förklara siffrorna och hjälpa dig hitta rätt vy.</p></div>
+    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '5px 0 0', color: 'var(--muted)' }}>Din ekonomiska rådgivar-kompis i Klirr. Ändringar visas alltid tydligt och kräver ditt ja.</p></div>
     <div className="chat-messages" ref={scrollRef}>
-      {state.chatMessages.map(m => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
+      {state.chatMessages.map(m => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel}</button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className="pill">{m.proposedAction.status}</span></div></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div>
       <div className="row" style={{ marginBottom: 10 }}>{buddySuggestions.map(s => <button key={s} className="btn small" onClick={() => send(s)}>{s}</button>)}</div>
-      <form className="chat-input" onSubmit={e => { e.preventDefault(); send(draft); }}><textarea className="textarea" rows={2} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Fråga Budget Buddy… t.ex. vad ska jag göra först?" /><button className="btn primary" type="submit" disabled={buddyBusy}>{buddyBusy ? 'Tänker…' : 'Skicka'}</button></form>
+      <form className="chat-input" onSubmit={e => { e.preventDefault(); send(draft); }}><textarea className="textarea" rows={2} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Fråga Budget Buddy… t.ex. vad blir 50 000 brutto efter skatt?" /><button className="btn primary" type="submit" disabled={buddyBusy}>{buddyBusy ? 'Tänker…' : 'Skicka'}</button></form>
     </div>
   </Card>;
 }
@@ -652,7 +716,7 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
   </>;
 }
 
-function SettingsView({ state, setState, onReset, loadDemo }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void }) {
+function SettingsView({ state, setState, onReset, loadDemo, restartOnboarding }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; restartOnboarding: () => void }) {
   const [importText, setImportText] = useState('');
   const exportText = JSON.stringify({ exportedAt: new Date().toISOString(), version: '1.0', state }, null, 2);
   function copyExport() { navigator.clipboard?.writeText(exportText).catch(() => undefined); }
@@ -670,6 +734,7 @@ function SettingsView({ state, setState, onReset, loadDemo }: { state: AppState;
     <AuthSyncPanel state={state} setState={setState} />
     <div className="grid grid-2">
       <Card><h3>Demo-läge</h3><p>Ladda om den fiktiva demoekonomin när du vill visa appen för andra.</p><button className="btn primary" onClick={loadDemo}>✨ Ladda demo-data</button></Card>
+      <Card><h3>Onboarding</h3><p>Starta om guidningen för att bygga en första månadsbudget manuellt.</p><button className="btn" onClick={restartOnboarding}>Starta onboarding igen</button></Card>
       <Card><h3>Radera lokal data</h3><p>Raderar Klirrs lokala data i denna webbläsare. Detta påverkar inte GitHub/Vercel.</p><button className="btn danger" onClick={onReset}>Radera och återställ</button></Card>
     </div>
     <Card><h3>Exportera hela lokala Klirr-datan</h3><p className="hint">Använd detta vid tester: kopiera JSON och skicka till utvecklare om något ser fel ut. Undvik riktig privatdata i delade buggrapporter.</p><textarea className="textarea copy-box" readOnly value={exportText} /><div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={copyExport}>Kopiera JSON</button></div></Card>
