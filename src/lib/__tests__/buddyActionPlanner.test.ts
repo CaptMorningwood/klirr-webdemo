@@ -131,3 +131,62 @@ describe('buddyActionPlanner variable plan actions', () => {
     }
   });
 });
+
+describe('issue 33 safe variable parsing and crisis budgets', () => {
+  const suggestionItems = [
+    { id: 'food', label: 'Mat och hushåll', amount: 3500, category: 'Mat', include: true },
+    { id: 'transport', label: 'Transport rörligt', amount: 800, category: 'Transport', include: true },
+    { id: 'fun', label: 'Nöje', amount: 400, category: 'Nöje', include: true },
+    { id: 'other', label: 'Övrigt hushåll', amount: 700, category: 'Övrigt', include: true },
+    { id: 'buffer', label: 'Buffert/sparande', amount: 900, category: 'Buffert', include: true },
+  ];
+  const context = { summary: { remainingAfterFixed: 8900 }, budgetSuggestion: { items: suggestionItems, marginLeft: 2600 } };
+
+  it('does not parse standalone hushåll as food', async () => {
+    const { extractVariablePlanItemsFromText } = await import('../buddyActionPlanner');
+    const parsed = extractVariablePlanItemsFromText('Övrigt hushåll 900 kr');
+    expect(parsed.find(item => item.label === 'Mat och hushåll')).toBeUndefined();
+    expect(parsed.find(item => item.label === 'Övrigt hushåll')?.amount).toBe(900);
+    expect(extractVariablePlanItemsFromText('Hushåll 900 kr')).toEqual([]);
+  });
+
+  it('parses explicit food phrases safely', async () => {
+    const { extractVariablePlanItemsFromText } = await import('../buddyActionPlanner');
+    expect(extractVariablePlanItemsFromText('Mat och hushåll 3500 kr')[0]).toMatchObject({ label: 'Mat och hushåll', amount: 3500 });
+    expect(extractVariablePlanItemsFromText('Mat 3500 kr')[0]).toMatchObject({ label: 'Mat och hushåll', amount: 3500 });
+  });
+
+  it('merges partial explicit plans with deterministic suggestion instead of replacing', () => {
+    const plan = planBuddyAction({ message: 'Mat 4000 kr, Nöje 0 kr, Buffert 500 kr', context });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+    if (plan.proposedAction?.type === 'update_variable_plan') {
+      expect(plan.proposedAction.payload.items).toHaveLength(5);
+      expect(plan.proposedAction.payload.items.find(item => item.label === 'Mat och hushåll')?.amount).toBe(4000);
+      expect(plan.proposedAction.payload.items.find(item => item.label === 'Transport rörligt')?.amount).toBe(800);
+      expect(plan.proposedAction.payload.items.find(item => item.label === 'Övrigt hushåll')?.amount).toBe(700);
+    }
+  });
+
+  it('allows complete explicit plans to replace suggestion', () => {
+    const plan = planBuddyAction({ message: 'Mat 3000 kr, Transport 500 kr, Nöje 0 kr, Övrigt 500 kr, Buffert 500 kr', context });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+    if (plan.proposedAction?.type === 'update_variable_plan') expect(plan.proposedAction.payload.items.map(item => item.amount)).toEqual([3000, 500, 0, 500, 500]);
+  });
+
+  it('creates a food-first crisis budget around 8900 kr available', () => {
+    const plan = planBuddyAction({ message: 'gör krisbudget', context: { summary: { remainingAfterFixed: 8900 } }, householdProfile: { adults: 1, children: 0, teens: 0 } });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+    if (plan.proposedAction?.type === 'update_variable_plan') {
+      const items = plan.proposedAction.payload.items;
+      const food = items.find(item => item.label === 'Mat och hushåll')?.amount || 0;
+      const fun = items.find(item => item.label === 'Nöje')?.amount || 0;
+      const total = items.reduce((sum, item) => sum + item.amount, 0) + (plan.proposedAction.payload.marginLeft || 0);
+      expect(plan.proposedAction.payload.mode).toBe('crisis');
+      expect(food).toBeGreaterThanOrEqual(2500);
+      expect(food).not.toBe(900);
+      expect(fun).toBeLessThanOrEqual(300);
+      expect(total).toBeLessThanOrEqual(8900);
+      expect(plan.proposedAction.payload.notes).toMatch(/Tillfällig krisbudget|granskas manuellt/i);
+    }
+  });
+});

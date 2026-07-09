@@ -1,7 +1,7 @@
 import { consumerGuidelines } from '../data/consumerGuidelines';
 import type { FoodAmbition, HouseholdProfile, TransportNeed, VariablePlanItem } from '../types';
 
-export type BudgetSuggestionMode = 'safe' | 'balanced' | 'boost';
+export type BudgetSuggestionMode = 'safe' | 'balanced' | 'boost' | 'crisis';
 export type GuidelineStatus = 'below' | 'near' | 'above' | 'far_above';
 
 export interface CategoryCap {
@@ -105,17 +105,17 @@ export function getCategoryCaps({ available, householdProfile, mode }: { availab
   const profile = normalizeHouseholdProfile(householdProfile);
   const units = Math.max(1, householdUnits(profile));
   const foodReference = getFoodReferenceAmount(profile);
-  const foodFactor = mode === 'safe' ? 0.98 : mode === 'boost' ? 1.12 : 1.03;
+  const foodFactor = mode === 'crisis' ? 0.92 : mode === 'safe' ? 0.98 : mode === 'boost' ? 1.12 : 1.03;
   const transportBase = profile.transportNeed === 'low' ? 900 : profile.transportNeed === 'high' ? 3200 : 1800;
   const householdTarget = 900 + Math.max(0, units - 1) * 450;
-  const funTarget = mode === 'safe' ? 1200 + units * 250 : mode === 'boost' ? 2200 + units * 650 : 1600 + units * 450;
+  const funTarget = mode === 'crisis' ? 200 : mode === 'safe' ? 1200 + units * 250 : mode === 'boost' ? 2200 + units * 650 : 1600 + units * 450;
   return {
     'Mat och hushåll': { recommendedMin: floor100(foodReference * 0.82), recommendedTarget: round100(foodReference * foodFactor), recommendedMax: round100(foodReference * 1.35), hardCap: round100(foodReference * 1.5) },
     'Transport rörligt': { recommendedMin: floor100(transportBase * 0.55), recommendedTarget: round100(transportBase), recommendedMax: round100(transportBase * 1.45), hardCap: round100(transportBase * 1.9) },
-    'Nöje': { recommendedMin: mode === 'boost' ? 500 : 200, recommendedTarget: round100(funTarget), recommendedMax: round100(funTarget * 1.55), hardCap: round100(funTarget * 2.2) },
+    'Nöje': { recommendedMin: mode === 'crisis' ? 0 : mode === 'boost' ? 500 : 200, recommendedTarget: round100(funTarget), recommendedMax: round100(funTarget * 1.55), hardCap: mode === 'crisis' ? 500 : round100(funTarget * 2.2) },
     'Övrigt hushåll': { recommendedMin: floor100(householdTarget * 0.55), recommendedTarget: round100(householdTarget), recommendedMax: round100(householdTarget * 1.45), hardCap: round100(householdTarget * 1.9) },
-    'Buffert/sparande': { recommendedMin: round100(available * (mode === 'safe' ? 0.16 : mode === 'boost' ? 0.08 : 0.12)), recommendedTarget: round100(available * (mode === 'safe' ? 0.24 : mode === 'boost' ? 0.12 : 0.17)), recommendedMax: available, hardCap: available },
-    'Marginal kvar': { recommendedMin: round100(available * (mode === 'safe' ? 0.10 : mode === 'boost' ? 0.04 : 0.07)), recommendedTarget: round100(available * (mode === 'safe' ? 0.14 : mode === 'boost' ? 0.06 : 0.09)), recommendedMax: available, hardCap: available },
+    'Buffert/sparande': { recommendedMin: round100(available * (mode === 'crisis' ? 0.04 : mode === 'safe' ? 0.16 : mode === 'boost' ? 0.08 : 0.12)), recommendedTarget: round100(available * (mode === 'crisis' ? 0.08 : mode === 'safe' ? 0.24 : mode === 'boost' ? 0.12 : 0.17)), recommendedMax: available, hardCap: available },
+    'Marginal kvar': { recommendedMin: round100(available * (mode === 'crisis' ? 0.03 : mode === 'safe' ? 0.10 : mode === 'boost' ? 0.04 : 0.07)), recommendedTarget: round100(available * (mode === 'crisis' ? 0.06 : mode === 'safe' ? 0.14 : mode === 'boost' ? 0.06 : 0.09)), recommendedMax: available, hardCap: available },
   };
 }
 
@@ -140,6 +140,7 @@ function modeSafetyConfig(mode: BudgetSuggestionMode) {
     safe: { marginPct: 0.10, savingsPct: 0.08, combinedPct: 0.15, foodShareCap: 0.60, emergencyFoodShareCap: 0.70, foodFactor: 0.98 },
     balanced: { marginPct: 0.07, savingsPct: 0.06, combinedPct: 0.13, foodShareCap: 0.65, emergencyFoodShareCap: 0.70, foodFactor: 1.03 },
     boost: { marginPct: 0.04, savingsPct: 0.04, combinedPct: 0.08, foodShareCap: 0.70, emergencyFoodShareCap: 0.70, foodFactor: 1.12 },
+    crisis: { marginPct: 0.03, savingsPct: 0.04, combinedPct: 0.07, foodShareCap: 0.75, emergencyFoodShareCap: 0.82, foodFactor: 0.92 },
   }[mode];
 }
 
@@ -176,6 +177,7 @@ export function suggestVariableBudget(input: {
     safe: { label: 'Trygg budget' },
     balanced: { label: 'Balanserad budget' },
     boost: { label: 'Lite friare budget' },
+    crisis: { label: 'Tillfällig krisbudget' },
   }[input.mode];
   const config = modeSafetyConfig(input.mode);
   const foodReference = getFoodReferenceAmount(profile);
@@ -201,9 +203,9 @@ export function suggestVariableBudget(input: {
   }
 
   let spendableForCategories = Math.max(0, available - reservedMargin - reservedSavings);
-  const safeFunFloor = input.mode === 'safe' && !emergencyMode && available > 8000 ? (available >= 12000 ? 500 : 300) : 0;
+  const safeFunFloor = input.mode === 'crisis' ? 0 : input.mode === 'safe' && !emergencyMode && available > 8000 ? (available >= 12000 ? 500 : 300) : 0;
   const tightCashflow = emergencyMode || spendableForCategories < foodReference + transportMin + householdMin + Math.max(caps.Nöje.recommendedMin, safeFunFloor);
-  const foodReferenceTarget = tightCashflow ? foodReference * 0.78 : foodReference * config.foodFactor;
+  const foodReferenceTarget = input.mode === 'crisis' && available >= 6500 ? Math.min(foodReference * config.foodFactor, Math.max(2500, foodReference * 0.86)) : tightCashflow ? foodReference * 0.78 : foodReference * config.foodFactor;
   const foodCap = emergencyMode ? emergencyFoodCap : foodNormalCap;
   const foodTarget = floor100(Math.min(foodReferenceTarget, foodCap));
 
@@ -273,7 +275,7 @@ export function suggestVariableBudget(input: {
     ? 'Det här är ett tajt kassaflödesläge, inte en långsiktigt trygg budget. Klirr prioriterar kassaflöde och håller nere vardagskategorier för att lämna marginal och planen behöver granskas manuellt. '
     : '';
   const funAmountForNote = items.find(item => item.label === 'Nöje')?.amount || 0;
-  const emergencyNote = emergencyMode ? 'Kris/tillfällig food-first-budget: tillgängligt belopp räcker knappt till miniminivåer, så säkerhetsdelen har sänkts men inte nollats om det finns utrymme. ' : '';
+  const emergencyNote = input.mode === 'crisis' ? 'Tillfällig krisbudget: mat och nödvändiga förbrukningsvaror skyddas först; nöje, sparande och marginal sänks innan mat blir orimligt låg. Planen ska granskas manuellt. ' : emergencyMode ? 'Kris/tillfällig food-first-budget: tillgängligt belopp räcker knappt till miniminivåer, så säkerhetsdelen har sänkts men inte nollats om det finns utrymme. ' : '';
   const zeroFunNote = funAmountForNote === 0 ? 'Nöje är 0 kr bara för att detta är en kris/tillfällig budget, inte en normal Trygg budget. ' : '';
   const note = `${preset.label}: ${tightNote}${emergencyNote}${zeroFunNote}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser matvaror, hygien och annan löpande förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
   return { marginLeft, buffer: marginLeft, safetyTotal, note, categoryCaps: caps, clampedCategories, overflowToSafety, guidelineComparison, explanationNotes: [note, guidelineComparison.food.note, 'Siffrorna är deterministiskt beräknade i Klirr och OpenAI får bara formulera texten.'], items };

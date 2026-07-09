@@ -27,13 +27,13 @@ Undvik stel ton som:
 
 Emoji-policy:
 Budget Buddy ska använda emojis ganska ofta, men naturligt.
-Normalnivå: 2–6 emojis per svar.
-Korta svar kan ha 1–3 emojis.
-Längre svar kan ha 3–7 emojis.
+Normalnivå: 4–8 emojis per svar.
+Korta svar kan ha 2–4 emojis.
+Längre svar kan ha 5–10 emojis.
 Använd gärna 💸, ✅, 💡, 🧾, 📌, 📊, 🫶, 😅, 🙌, 🎄, 🎁, 🚌, 🍝, 🏠 när det passar.
 Använd inte emoji i varje mening.
 Använd inte samma emoji-kombination varje gång.
-Om ämnet är stressigt, använd mjukare emojis och färre, men ta inte bort dem helt.
+Om ämnet är stressigt, skuldtyngt eller en kris: använd 1–4 mjukare emojis och ta det lugnare.
 Emojis ska förstärka känslan, inte ersätta innehåll.
 
 Kontrollfrågor:
@@ -226,18 +226,56 @@ function makeIncomeAction(message, context) {
 
 function variableBudgetIntent(message) {
   const text = String(message || '').toLowerCase();
-  return /(rörlig(?:a)? plan(?:en)?|ny(?:\s+rörlig)?\s+plan|lägg upp en plan|lagg upp en plan|gör en plan|gor en plan|ändra planen|andra planen|justera planen|använd planen|anvand planen|kör på planen|kor pa planen|mer buffert|mer sparande|mindre mat|mer nöje|mer noje|fördela pengarna|fordela pengarna|planera det rörliga|vardagsbudget|tryggare.*(?:rörlig|plan|budget)|(?:rörlig|rörliga) budget|budgetförslag|budgetforslag)/i.test(text);
+  return /(krisbudget|gör krisbudget|gor krisbudget|överlev månaden|overlev manaden|vi måste bara klara månaden|vi maste bara klara manaden|minimera allt|maxa marginal men inte svälta matbudgeten|maxa marginal men inte svalta matbudgeten|tightaste planen|akut budget|rörlig(?:a)? plan(?:en)?|ny(?:\s+rörlig)?\s+plan|lägg upp en plan|lagg upp en plan|gör en plan|gor en plan|ändra planen|andra planen|justera planen|använd planen|anvand planen|kör på planen|kor pa planen|mer buffert|mer sparande|mindre mat|mer nöje|mer noje|fördela pengarna|fordela pengarna|planera det rörliga|vardagsbudget|tryggare.*(?:rörlig|plan|budget)|(?:rörlig|rörliga) budget|budgetförslag|budgetforslag)/i.test(text);
 }
 function variablePlanConfirmationIntent(message) {
   return /^(\s*)(ja[,! ]*)?(gör så|gor sa|kör på det|kor pa det|kör på den|kor pa den|lägg in den|lagg in den|använd den(?: planen)?|anvand den(?: planen)?|det låter bra|det later bra|låter bra|later bra|så kör vi|sa kor vi)(\s*[!.]*)?$/i.test(String(message || '').toLowerCase());
 }
 const variableCategoryAliases = [
-  { label: 'Mat och hushåll', category: 'Mat', pattern: /mat(?:\s+och\s+hushåll)?|hushåll/i },
+  { label: 'Mat och hushåll', category: 'Mat', pattern: /mat(?:\s+och\s+hushåll)?|matvaror|livsmedel|matbudget/i },
   { label: 'Transport rörligt', category: 'Transport', pattern: /transport(?:\s+rörligt)?|buss|bil|resor/i },
   { label: 'Nöje', category: 'Nöje', pattern: /nöje|noje/i },
   { label: 'Övrigt hushåll', category: 'Övrigt', pattern: /övrigt(?:\s+hushåll)?|ovrigt(?:\s+hushall)?/i },
   { label: 'Buffert/sparande', category: 'Buffert', pattern: /buffert|sparande/i },
 ];
+
+const REQUIRED_VARIABLE_LABELS = ['Mat och hushåll', 'Transport rörligt', 'Nöje', 'Övrigt hushåll', 'Buffert/sparande'];
+function hasCompleteVariablePlan(items) {
+  const labels = new Set(items.map(item => item.label));
+  return REQUIRED_VARIABLE_LABELS.every(label => labels.has(label));
+}
+function mergeExplicitItemsWithSuggestion(explicitItems, suggestionItems) {
+  if (!suggestionItems.length) return explicitItems;
+  const explicitByLabel = new Map(explicitItems.map(item => [item.label, item]));
+  return suggestionItems.map(base => {
+    const explicit = explicitByLabel.get(base.label);
+    return explicit ? { ...base, ...explicit, id: base.id || explicit.id, include: explicit.include !== false } : base;
+  });
+}
+function crisisBudgetIntent(message) {
+  return /(gör krisbudget|gor krisbudget|krisbudget|överlev månaden|overlev manaden|vi måste bara klara månaden|vi maste bara klara manaden|minimera allt|maxa marginal men inte svälta matbudgeten|maxa marginal men inte svalta matbudgeten|tightaste planen|akut budget)/i.test(String(message || '').toLowerCase());
+}
+function makeApiCrisisSuggestion(context) {
+  const available = Math.max(0, Math.round(Number(context?.summary?.remainingAfterFixed || 0)));
+  const adults = Math.max(1, Math.round(Number(context?.householdProfile?.adults || 1)));
+  const food = Math.min(Math.max(2500 * adults, available >= 6500 ? 3000 * adults : Math.floor(available * 0.45 / 100) * 100), Math.floor(available * 0.55 / 100) * 100);
+  const transport = Math.min(900, Math.max(500, Math.floor(available * 0.08 / 100) * 100));
+  const fun = available >= 8500 ? 300 : 0;
+  const other = Math.min(900, Math.max(500, Math.floor(available * 0.08 / 100) * 100));
+  let savings = Math.min(1000, Math.max(0, Math.floor((available - food - transport - fun - other) * 0.45 / 100) * 100));
+  let items = [
+    { id: 'vp_api_crisis_food', label: 'Mat och hushåll', amount: food, category: 'Vardag', include: true },
+    { id: 'vp_api_crisis_transport', label: 'Transport rörligt', amount: transport, category: 'Transport', include: true },
+    { id: 'vp_api_crisis_fun', label: 'Nöje', amount: fun, category: 'Valfritt', include: true },
+    { id: 'vp_api_crisis_other', label: 'Övrigt hushåll', amount: other, category: 'Vardag', include: true },
+    { id: 'vp_api_crisis_buffer', label: 'Buffert/sparande', amount: savings, category: 'Sparande', include: true },
+  ];
+  let total = items.reduce((sum, item) => sum + item.amount, 0);
+  if (total > available && total > 0) items = items.map(item => item.label === 'Buffert/sparande' ? { ...item, amount: Math.max(0, item.amount - (total - available)) } : item);
+  total = items.reduce((sum, item) => sum + item.amount, 0);
+  return { items, marginLeft: Math.max(0, available - total), note: 'Tillfällig krisbudget: mat skyddas först. Nöje, sparande och marginal sänks innan mat blir orimligt låg. Planen ska granskas manuellt.' };
+}
+
 function extractVariablePlanItemsFromText(text) {
   const source = String(text || '').replace(/\u00a0/g, ' ');
   const found = new Map();
@@ -258,14 +296,16 @@ function recentPlanText(recentMessages) {
 
 function makeVariablePlanAction(message, context, recentMessages = []) {
   const historyText = recentPlanText(recentMessages);
-  const explicitItems = extractVariablePlanItemsFromText(`${message}\n${historyText}`);
+  const explicitItems = extractVariablePlanItemsFromText(message);
   const isFollowup = variablePlanConfirmationIntent(message) && (variableBudgetIntent(historyText) || explicitItems.length >= 3);
   if (!variableBudgetIntent(message) && explicitItems.length < 3 && !isFollowup) return null;
-  const suggestion = context?.budgetSuggestion;
+  const crisis = crisisBudgetIntent(message);
+  const suggestion = crisis ? makeApiCrisisSuggestion(context) : context?.budgetSuggestion;
   const current = Array.isArray(context?.variablePlan) ? context.variablePlan : [];
-  const items = explicitItems.length >= 3 ? explicitItems : (Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current);
+  const suggestionItems = Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current;
+  const items = explicitItems.length ? (hasCompleteVariablePlan(explicitItems) ? explicitItems : mergeExplicitItemsWithSuggestion(explicitItems, suggestionItems)) : suggestionItems;
   if (!items.length) return null;
-  return { source: 'local-fallback', message: 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸 Här är ett tydligt förslag — inget ändras förrän du säger ja.', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd ny rörlig plan', description: 'Ersätt den rörliga planen med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: Number(context?.summary?.remainingAfterFixed || 0), marginLeft: Number(suggestion?.marginLeft ?? Math.max(0, Number(context?.summary?.remainingAfterFixed || 0) - items.reduce((sum, item) => sum + Number(item.amount || 0), 0))), mode: 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
+  return { source: 'local-fallback', message: crisis ? 'Yes, jag ser krisläget 🛟💡 Jag föreslår en tillfällig food-first-plan — inget ändras förrän du säger ja ✅' : 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸✨ Här är ett tydligt förslag — inget ändras förrän du säger ja 🫶', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: crisis ? 'Använd tillfällig krisbudget' : 'Använd ny rörlig plan', description: crisis ? 'Det här är en tillfällig, stram plan. Inget ändras förrän du säger ja.' : 'Ersätt den rörliga planen med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: Number(context?.summary?.remainingAfterFixed || 0), marginLeft: Number(suggestion?.marginLeft ?? Math.max(0, Number(context?.summary?.remainingAfterFixed || 0) - items.reduce((sum, item) => sum + Number(item.amount || 0), 0))), mode: crisis ? 'crisis' : 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending', riskLevel: 'medium', undoable: true } };
 }
 function deterministicActionReply(message, context, recentMessages = []) {
   return makeIncomeAction(message, context) || makeVariablePlanAction(message, context, recentMessages);
