@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
+import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
@@ -12,6 +12,8 @@ import { exportBudgetReport, exportTransactionsCsv } from './lib/exporters';
 import { fmt, fmtSigned, pct, todayIso, uid } from './lib/format';
 import { categorize } from './lib/rulesEngine';
 import { actionableCandidateReason, detectRecurring, getActionableRecurringCandidates } from './lib/recurrenceEngine';
+import { detectPossibleIncomeDuplicates, getUnifiedIncomeItems } from './lib/incomeReconciliation';
+import { countHandledReviewItems, getVisibleReviewItems } from './lib/reviewVisibility';
 import { getEntitlements } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
 import { appendBuddyActionHistory, applyBuddyActionWithResult, findPendingBuddyAction } from './lib/buddyActions';
@@ -38,6 +40,7 @@ const initialState: AppState = {
   variablePlan: defaultVariablePlan,
   recurringDecisions: {},
   transferDecisions: {},
+  reviewDecisions: {},
   scenarioOff: [],
   chatMessages: [initialBuddyMessage()],
   buddyActionHistory: [],
@@ -153,6 +156,10 @@ export default function App() {
   const detection = useMemo(() => detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions), [state.transactions, state.accounts, state.rules, state.transferDecisions]);
   const summary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan]);
   const scenarioSummary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, scenarioOff: state.scenarioOff }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan, state.scenarioOff]);
+  const visibleReviewItems = useMemo(() => getVisibleReviewItems({ reviewItems: detection.reviewItems, recurringDecisions: state.recurringDecisions, reviewDecisions: state.reviewDecisions }), [detection.reviewItems, state.recurringDecisions, state.reviewDecisions]);
+  const handledReviewCount = useMemo(() => countHandledReviewItems({ reviewItems: detection.reviewItems, recurringDecisions: state.recurringDecisions, reviewDecisions: state.reviewDecisions }), [detection.reviewItems, state.recurringDecisions, state.reviewDecisions]);
+  const possibleIncomeDuplicates = useMemo(() => detectPossibleIncomeDuplicates(state.incomes, summary.incomeItems.filter(item => item.source === 'recurring')), [state.incomes, summary.incomeItems]);
+
   const hasAnyBudgetData =
     state.transactions.length > 0 ||
     state.incomes.length > 0 ||
@@ -162,7 +169,7 @@ export default function App() {
 
   const setPartial = (patch: Partial<AppState>) => setState(prev => ({ ...prev, ...patch }));
   const badges: Partial<Record<TabId, number>> = {
-    importReview: detection.reviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + getActionableRecurringCandidates(detection.recurring).filter(r => !state.recurringDecisions[r.id]?.status).length,
+    importReview: visibleReviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + getActionableRecurringCandidates(detection.recurring).filter(r => !state.recurringDecisions[r.id]?.status).length,
   };
 
   function selectTab(nextTab: TabId) {
@@ -243,11 +250,11 @@ export default function App() {
 
       <main className="main">
         {!state.onboardingCompleted && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} />}
-        {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
+        {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
         {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
-        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} />}
-        {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
-        {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
+        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} />}
+        {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} summary={summary} />}
+        {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {state.onboardingCompleted && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false }); selectTab('dashboard'); }} />}
       </main>
 
@@ -310,7 +317,7 @@ function OnboardingView({ initialState, state, setState, loadDemo, setTab }: { i
   </>;
 }
 
-function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onExport: () => void }) {
+function DashboardView({ summary, detection, visibleReviewCount, loadDemo, setTab, hasData, onExport }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onExport: () => void }) {
   if (!hasData) {
     return <><PageTitle title="Välkommen till Klirr" subtitle="Importera bankdata, ladda demo eller börja manuellt med inkomster och måsten." />
       <Card><div className="stack"><p>Klirr hjälper dig förstå vad livet kostar varje månad. Du kan börja snabbt genom att lägga in inkomster och måsten manuellt, eller importera ett kontoutdrag för smartare analys.</p><div className="row"><button className="btn primary" onClick={loadDemo}>✨ Ladda demo</button><button className="btn" onClick={() => setTab('import')}>Importera CSV</button><button className="btn" onClick={() => setTab('income')}>Lägg in inkomst</button><button className="btn" onClick={() => setTab('musts')}>Lägg in måsten</button></div></div></Card></>;
@@ -338,7 +345,7 @@ function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport
     {summary.warnings.length > 0 && <Card className="warn" ><b>Att granska:</b><ul>{summary.warnings.map(w => <li key={w}>{w}</li>)}</ul></Card>}
     <div className="grid grid-2" style={{ marginTop: 16 }}>
       <Card><h3>Största måsten</h3>{summary.fixedItems.slice(0, 6).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<button className="btn small" style={{ marginTop: 10 }} onClick={() => setTab('musts')}>Visa alla</button></Card>
-      <Card><h3>Nästa steg</h3><div className="stack"><button className="btn" onClick={() => setTab('review')}>Granska oklara poster ({detection.reviewItems.length})</button><button className="btn" onClick={() => setTab('recurring')}>Bekräfta återkommande</button><button className="btn" onClick={onExport}>Exportera rapport</button></div></Card>
+      <Card><h3>Nästa steg</h3><div className="stack"><button className="btn" onClick={() => setTab('review')}>Granska oklara poster ({visibleReviewCount})</button><button className="btn" onClick={() => setTab('recurring')}>Bekräfta återkommande</button><button className="btn" onClick={onExport}>Exportera rapport</button></div></Card>
     </div>
   </>;
 }
@@ -357,18 +364,18 @@ function PlanView({ active, setActive, summary, scenarioSummary, state, setState
   </>;
 }
 
-function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo, setTab }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void; setTab: (tab: TabId) => void }) {
+function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo, setTab, visibleReviewItems }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void; setTab: (tab: TabId) => void; visibleReviewItems: DetectionResult['reviewItems'] }) {
   const transferCount = detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length;
   const actionableRecurring = getActionableRecurringCandidates(detection.recurring);
   const recurringCount = actionableRecurring.filter(r => !state.recurringDecisions[r.id]?.status).length;
   return <><PageTitle title="Import & granskning" subtitle="Importera kontoutdrag och granska hur Klirr tolkar transaktioner, överföringar och återkommande poster." />
-    <SectionTabs<ImportReviewSection> active={active} onChange={setActive} items={[{ id: 'import', label: 'Importera' }, { id: 'accounts', label: 'Konton' }, { id: 'transactions', label: 'Transaktioner' }, { id: 'transfers', label: 'Överföringar', badge: transferCount }, { id: 'recurring', label: 'Återkommande', badge: recurringCount }, { id: 'review', label: 'Oklara poster', badge: detection.reviewItems.length }]} />
+    <SectionTabs<ImportReviewSection> active={active} onChange={setActive} items={[{ id: 'import', label: 'Importera' }, { id: 'accounts', label: 'Konton' }, { id: 'transactions', label: 'Transaktioner' }, { id: 'transfers', label: 'Överföringar', badge: transferCount }, { id: 'recurring', label: 'Återkommande', badge: recurringCount }, { id: 'review', label: 'Oklara poster', badge: visibleReviewItems.length }]} />
     {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} rules={state.rules} transferDecisions={state.transferDecisions} loadDemo={loadDemo} onImported={(section = 'recurring') => setActive(section)} onAskBuddy={() => setTab('buddy')} />}
     {active === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} setAccounts={(accounts) => setPartial({ accounts })} />}
     {active === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
     {active === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
     {active === 'recurring' && <RecurringView detection={detection} decisions={state.recurringDecisions} setDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} addRule={(rule) => setPartial({ rules: [...state.rules, rule] })} />}
-    {active === 'review' && <ReviewView detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
+    {active === 'review' && <ReviewView reviewItems={visibleReviewItems} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} reviewDecisions={state.reviewDecisions || {}} setReviewDecisions={(reviewDecisions) => setPartial({ reviewDecisions })} />}
   </>;
 }
 
@@ -380,7 +387,7 @@ function MoreView({ active, setActive, state, setState, onReset, loadDemo }: { a
   </>;
 }
 
-function BudgetBuddyView({ state, setState, summary, detection, setTab, setScenarioOff }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void }) {
+function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, setScenarioOff }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void }) {
   const [draft, setDraft] = useState('');
   const [buddyBusy, setBuddyBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -415,7 +422,7 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
       const currentDate = new Date().toISOString();
       const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
       const actionableCandidates = getActionableRecurringCandidates(detection.recurring);
-      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, supportedBankFormats: supportedBankFormats().map(f => f.label), possibleEncodingIssue: state.transactions.some(t => t.importWarnings?.some(w => w.includes('encoding'))), knowledgeBaseCategories: knowledgeBaseCategories(), transactionCount: state.transactions.length, reviewCount: detection.reviewItems.length, transferCandidateCount: detection.transfers.length, transferCount: detection.transfers.length, recurringCandidateCountsByType: { income: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, fixed: actionableCandidates.filter(r => r.costTypeDefault === 'fixed').length, variable: actionableCandidates.filter(r => r.costTypeDefault === 'variable').length }, recurringCandidateCount: actionableCandidates.length, actionableIncomeCandidateCount: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, actionableExpenseCandidateCount: actionableCandidates.filter(r => r.costTypeDefault !== 'income').length, confirmedRecurringCount: detection.recurring.filter(r => state.recurringDecisions[r.id]?.status === 'confirmed').length, unconfirmedRecurringCount: actionableCandidates.filter(r => state.recurringDecisions[r.id]?.status !== 'confirmed' && state.recurringDecisions[r.id]?.status !== 'rejected').length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, supportedBankFormats: supportedBankFormats().map(f => f.label), possibleEncodingIssue: state.transactions.some(t => t.importWarnings?.some(w => w.includes('encoding'))), knowledgeBaseCategories: knowledgeBaseCategories(), transactionCount: state.transactions.length, reviewCount: visibleReviewCount, visibleReviewCount, handledReviewCount, manualIncomeTotal: state.incomes.reduce((sum, i) => sum + (i.frequency === 'yearly' ? i.amount / 12 : i.frequency === 'quarterly' ? i.amount / 3 : i.amount), 0), recurringIncomeTotal: summary.incomeItems.filter(i => i.source === 'recurring').reduce((sum, i) => sum + i.amount, 0), totalIncome: summary.totalIncome, incomeItems: summary.incomeItems, possibleIncomeDuplicates, transferCandidateCount: detection.transfers.length, transferCount: detection.transfers.length, recurringCandidateCountsByType: { income: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, fixed: actionableCandidates.filter(r => r.costTypeDefault === 'fixed').length, variable: actionableCandidates.filter(r => r.costTypeDefault === 'variable').length }, recurringCandidateCount: actionableCandidates.length, actionableIncomeCandidateCount: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, actionableExpenseCandidateCount: actionableCandidates.filter(r => r.costTypeDefault !== 'income').length, confirmedRecurringCount: detection.recurring.filter(r => state.recurringDecisions[r.id]?.status === 'confirmed').length, unconfirmedRecurringCount: actionableCandidates.filter(r => state.recurringDecisions[r.id]?.status !== 'confirmed' && state.recurringDecisions[r.id]?.status !== 'rejected').length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
       const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
@@ -540,11 +547,13 @@ function RecurringView({ detection, decisions, setDecisions, addRule }: { detect
     <div className="stack">{items.map(r => { const d = decisions[r.id]; const status = d?.status || 'pending'; const currentCostType = d?.costType || r.costTypeDefault; const isIncome = currentCostType === 'income'; return <Card key={r.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{r.label}</b><br/><small style={{ color: 'var(--muted)' }}>{r.category} · {costTypeLabel(currentCostType)} · {frequencyLabel(r.frequency)} · {r.occurrences} förekomster · {r.confidence}% · {actionableCandidateReason(r)} · {r.reason}</small></div><b className={`mono ${isIncome ? 'amount-pos' : ''}`}>{isIncome ? '+' : ''}{fmt(d?.monthlyAmountOverride ?? r.monthlyAmount)}/mån</b></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 180 }} value={currentCostType} onChange={e => patch(r.id, { costType: e.target.value as RecurringDecision['costType'] })}><option value="fixed">Fast utgift</option><option value="variable">Rörlig utgift</option><option value="income">Inkomst</option></select><input className="input" style={{ maxWidth: 130 }} type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => patch(r.id, { monthlyAmountOverride: Number(e.target.value) })} /><button className="btn small primary" onClick={() => patch(r.id, { status: 'confirmed' })}>Bekräfta</button><button className="btn small" onClick={() => patch(r.id, { status: 'rejected' })}>Räkna bort</button><button className="btn small" onClick={() => addRule({ id: uid('rule'), matchText: r.normName.split(' ')[0], category: r.category, costType: currentCostType || r.costTypeDefault })}>Spara regel</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!items.length && <Empty>Inga återkommande kandidater att granska just nu.</Empty>}</div></>;
 }
 
-function ReviewView({ detection, recurringDecisions, setRecurringDecisions }: { detection: DetectionResult; recurringDecisions: Record<string, RecurringDecision>; setRecurringDecisions: (d: Record<string, RecurringDecision>) => void }) {
-  function confirm(id?: string) { if (!id) return; setRecurringDecisions({ ...recurringDecisions, [id]: { ...recurringDecisions[id], status: 'confirmed' } }); }
-  function reject(id?: string) { if (!id) return; setRecurringDecisions({ ...recurringDecisions, [id]: { ...recurringDecisions[id], status: 'rejected' } }); }
-  return <><PageTitle title="Oklara poster" subtitle="Saker som Klirr inte vill räkna in utan att du kontrollerar dem." />
-    <div className="stack">{detection.reviewItems.map(it => <Card className="warn" key={it.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{it.description}</b><br/><small>{it.date} · {reviewTypeLabel(it.type)}</small><p>{it.note}</p></div><b className="mono">{fmt(Math.abs(it.amount))}</b></div>{it.recurringId && <div className="row"><button className="btn small primary" onClick={() => confirm(it.recurringId)}>Räkna med</button><button className="btn small" onClick={() => reject(it.recurringId)}>Räkna bort</button></div>}</Card>)}{!detection.reviewItems.length && <Empty>Inga oklara poster just nu.</Empty>}</div></>;
+function ReviewView({ reviewItems, recurringDecisions, setRecurringDecisions, reviewDecisions, setReviewDecisions }: { reviewItems: DetectionResult['reviewItems']; recurringDecisions: Record<string, RecurringDecision>; setRecurringDecisions: (d: Record<string, RecurringDecision>) => void; reviewDecisions: Record<string, ReviewDecision>; setReviewDecisions: (d: Record<string, ReviewDecision>) => void }) {
+  function decide(item: DetectionResult['reviewItems'][number], status: 'confirmed' | 'rejected') {
+    if (item.recurringId) setRecurringDecisions({ ...recurringDecisions, [item.recurringId]: { ...recurringDecisions[item.recurringId], status } });
+    else setReviewDecisions({ ...reviewDecisions, [item.id]: { status, note: status === 'confirmed' ? 'Hanterad från Oklara poster.' : 'Borträknad från Oklara poster.' } });
+  }
+  return <><PageTitle title="Oklara poster" subtitle="Saker som Klirr inte vill räkna in utan att du kontrollerar dem. Knapparna sparar beslutet direkt och posten försvinner från listan." />
+    <div className="stack">{reviewItems.map(it => <Card className="warn" key={it.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{it.description}</b><br/><small>{it.date} · {reviewTypeLabel(it.type)}</small><p>{it.note}</p></div><b className="mono">{fmt(Math.abs(it.amount))}</b></div><div className="row"><button className="btn small primary" onClick={() => decide(it, 'confirmed')}>Räkna med</button><button className="btn small" onClick={() => decide(it, 'rejected')}>Räkna bort</button><span className="hint">Beslutet sparas och döljer posten.</span></div></Card>)}{!reviewItems.length && <Empty>Inga oklara poster just nu.</Empty>}</div></>;
 }
 
 function ScenariosView({ summary, scenarioSummary, state, setState }: { summary: ReturnType<typeof calculateBudget>; scenarioSummary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void }) {
@@ -564,9 +573,11 @@ function TransfersView({ detection, transactions, accounts, decisions, setDecisi
     <div className="stack">{detection.transfers.map(t => { const d = tx.get(t.debitTxId)!; const c = tx.get(t.creditTxId)!; const status = decisions[t.id]?.status || 'pending'; return <Card key={t.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{acc.get(d.accountId)} → {acc.get(c.accountId)}</b><br/><small>{d.date} / {c.date} · {t.reason} · {t.confidence}%</small></div><b>{fmt(Math.abs(d.amount))}</b></div><div className="row" style={{ marginTop: 10 }}><button className="btn small primary" onClick={() => patch(t.id, 'confirmed')}>Bekräfta</button><button className="btn small" onClick={() => patch(t.id, 'rejected')}>Inte intern</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!detection.transfers.length && <Empty>Inga interna överföringar hittades.</Empty>}</div></>;
 }
 
-function IncomeView({ incomes, setIncomes }: { incomes: Income[]; setIncomes: (i: Income[]) => void }) {
+function IncomeView({ incomes, setIncomes, summary }: { incomes: Income[]; setIncomes: (i: Income[]) => void; summary: ReturnType<typeof calculateBudget> }) {
   const [label, setLabel] = useState(''); const [amount, setAmount] = useState('');
-  const total = incomes.reduce((sum, i) => sum + (i.frequency === 'yearly' ? i.amount / 12 : i.frequency === 'quarterly' ? i.amount / 3 : i.amount), 0);
+  const unifiedIncomeItems = getUnifiedIncomeItems(summary, incomes);
+  const recurringIncomeItems = unifiedIncomeItems.filter(item => item.source === 'recurring');
+  const possibleDuplicates = detectPossibleIncomeDuplicates(incomes, recurringIncomeItems);
   function addIncome() {
     if (!label || !amount) return;
     setIncomes([...incomes, { id: uid('inc'), label, amount: Number(amount), frequency: 'monthly' }]);
@@ -578,9 +589,11 @@ function IncomeView({ incomes, setIncomes }: { incomes: Income[]; setIncomes: (i
   function removeIncome(id: string) {
     setIncomes(incomes.filter(i => i.id !== id));
   }
-  return <><PageTitle title="Inkomster" subtitle="Lägg in och ändra pengar som kommer in. Kostnader hanteras under Måsten eller Rörlig plan." />
-    <MetricCard label="Inkomst per månad" value={fmt(total)} />
-    <Card><h3>Redigera inkomster</h3><p className="hint">Ändra namn, belopp och hur ofta inkomsten kommer. Klirr räknar om år/kvartal till månadsbelopp automatiskt.</p><div className="stack">{incomes.map(i => <div className="edit-row" key={i.id}><input className="input" value={i.label} onChange={e => updateIncome(i.id, { label: e.target.value })} /><input className="input money-input" type="number" value={i.amount} onChange={e => updateIncome(i.id, { amount: Number(e.target.value) })} /><select className="select frequency-input" value={i.frequency} onChange={e => updateIncome(i.id, { frequency: e.target.value as Frequency })}><option value="monthly">Varje månad</option><option value="quarterly">Varje kvartal</option><option value="yearly">Varje år</option><option value="irregular">Oregelbundet</option></select><button className="btn small danger" onClick={() => removeIncome(i.id)}>Ta bort</button></div>)}{!incomes.length && <Empty>Inga inkomster tillagda ännu.</Empty>}</div></Card>
+  return <><PageTitle title="Inkomster" subtitle="Här visas både manuella inkomster och importerade inkomster som du har bekräftat från kontoutdrag." />
+    <MetricCard label="Inkomst per månad" value={fmt(summary.totalIncome)} />
+    {!!possibleDuplicates.length && <Card className="warn"><h3>Möjlig dubbelräkning</h3><p>Det ser ut som att du kan ha både manuell lön och importerad lön aktiverad. Om det är samma inkomst bör du räkna bort en av dem.</p><div className="stack">{possibleDuplicates.map(dup => <div className="list-line" key={`${dup.manual.id}-${dup.recurring.id}`}><span>{dup.manual.label} + {dup.recurring.label}<br/><small>{dup.reasons.join(', ')}</small></span><b className="mono">{fmt(dup.recurring.amount)}</b></div>)}</div></Card>}
+    <Card><h3>Manuella inkomster</h3><p className="hint">Manuell källa. Ändra namn, belopp och hur ofta inkomsten kommer. Klirr räknar om år/kvartal till månadsbelopp automatiskt.</p><div className="stack">{incomes.map(i => <div className="edit-row" key={i.id}><input className="input" value={i.label} onChange={e => updateIncome(i.id, { label: e.target.value })} /><input className="input money-input" type="number" value={i.amount} onChange={e => updateIncome(i.id, { amount: Number(e.target.value) })} /><select className="select frequency-input" value={i.frequency} onChange={e => updateIncome(i.id, { frequency: e.target.value as Frequency })}><option value="monthly">Varje månad</option><option value="quarterly">Varje kvartal</option><option value="yearly">Varje år</option><option value="irregular">Oregelbundet</option></select><span className="pill">Manuell</span><button className="btn small danger" onClick={() => removeIncome(i.id)}>Ta bort</button></div>)}{!incomes.length && <Empty>Inga manuella inkomster tillagda ännu.</Empty>}</div></Card>
+    <Card><h3>Importerade bekräftade inkomster</h3><p className="hint">Importerad / bekräftad från kontoutdrag. Ändra eller räkna bort dem under Import & granskning → Återkommande.</p><div className="stack">{recurringIncomeItems.map(i => <div className="list-line" key={i.id}><span><b>{i.label}</b><br/><small>{i.category} · Importerad / bekräftad från kontoutdrag{i.confidence ? ` · ${i.confidence}% säkerhet` : ''}</small></span><b className="mono">{fmt(i.amount)}/mån</b></div>)}{!recurringIncomeItems.length && <Empty>Inga bekräftade importerade inkomster ännu.</Empty>}</div></Card>
     <Card><h3>Lägg till inkomst</h3><div className="row" style={{ marginTop: 12 }}><input className="input" placeholder="Lön, barnbidrag, frilansintäkt…" value={label} onChange={e => setLabel(e.target.value)} /><input className="input money-input" type="number" placeholder="kr" value={amount} onChange={e => setAmount(e.target.value)} /><button className="btn primary" onClick={addIncome}>Lägg till</button></div></Card>
   </>;
 }
@@ -730,7 +743,7 @@ function AccountsView({ accounts, transactions, setAccounts }: { accounts: Accou
 
 
 
-function HouseholdView({ active, setActive, householdProfile, setHouseholdProfile, incomes, setIncomes }: { active: HouseholdSection; setActive: (s: HouseholdSection) => void; householdProfile?: HouseholdProfile; setHouseholdProfile: (p: HouseholdProfile) => void; incomes: Income[]; setIncomes: (i: Income[]) => void }) {
+function HouseholdView({ active, setActive, householdProfile, setHouseholdProfile, incomes, setIncomes, summary }: { active: HouseholdSection; setActive: (s: HouseholdSection) => void; householdProfile?: HouseholdProfile; setHouseholdProfile: (p: HouseholdProfile) => void; incomes: Income[]; setIncomes: (i: Income[]) => void; summary: ReturnType<typeof calculateBudget> }) {
   const profile = normalizeHouseholdProfile(householdProfile);
   function patch(patch: Partial<HouseholdProfile>) {
     setHouseholdProfile(normalizeHouseholdProfile({ ...profile, ...patch }));
@@ -750,7 +763,7 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
         <label><span className="metric-label">Transportbehov</span><select className="select" value={profile.transportNeed} onChange={e => patch({ transportNeed: e.target.value as TransportNeed })}><option value="low">Lågt</option><option value="normal">Normalt</option><option value="high">Högt</option></select></label>
       </div></Card>
     </>}
-    {active === 'income' && <IncomeView incomes={incomes} setIncomes={setIncomes} />}
+    {active === 'income' && <IncomeView incomes={incomes} setIncomes={setIncomes} summary={summary} />}
   </>;
 }
 

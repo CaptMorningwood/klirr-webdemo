@@ -128,6 +128,11 @@ export interface TransferDecision {
   status: DecisionStatus;
 }
 
+export interface ReviewDecision {
+  status: DecisionStatus;
+  note?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -241,6 +246,7 @@ export interface AppState {
   variablePlan: VariablePlanItem[];
   recurringDecisions: Record<string, RecurringDecision>;
   transferDecisions: Record<string, TransferDecision>;
+  reviewDecisions?: Record<string, ReviewDecision>;
   scenarioOff: string[];
   chatMessages: ChatMessage[];
   buddyActionHistory?: BuddyActionHistoryEntry[];
