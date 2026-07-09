@@ -64,7 +64,8 @@ function monthlyAmountFor(freq: RecurringExpense['frequency'], meanAmount: numbe
 }
 
 function defaultCostType(direction: Direction, category: ReturnType<typeof categorize>): 'fixed' | 'variable' | 'income' {
-  if (direction === 'income') return 'income';
+  if (category.costType === 'excluded' || category.costType === 'transfer') return 'variable';
+  if (direction === 'income') return category.costType === 'income' ? 'income' : 'variable';
   if (category.costType === 'fixed') return 'fixed';
   return 'variable';
 }
@@ -141,6 +142,32 @@ function uniqueReviewItems(items: ReviewItem[]) {
   });
 }
 
+
+export function isActionableRecurringCandidate(item: RecurringExpense) {
+  if (item.costTypeDefault === 'income' && item.monthlyAmount >= 1000) return true;
+  if (item.costTypeDefault === 'fixed' && item.monthlyAmount >= 100) return true;
+  if (item.confidence >= 50) return true;
+  if (item.occurrences >= 2 && item.costTypeDefault !== 'variable') return true;
+  return false;
+}
+
+export function actionableCandidateReason(item: RecurringExpense) {
+  const singleMonthNote = item.occurrences === 1 ? ' Bara hittad en gång — bekräfta bara om den ska räknas framåt.' : '';
+  if (item.costTypeDefault === 'income' && item.monthlyAmount >= 1000) {
+    return `Hittad som möjlig inkomst från import. Bekräfta om detta ska räknas som normal månadsinkomst.${singleMonthNote}`;
+  }
+  if (item.costTypeDefault === 'fixed' && item.monthlyAmount >= 100) {
+    return `Hittad som möjlig fast kostnad från import. Bekräfta om detta är ett återkommande måste.${singleMonthNote}`;
+  }
+  if (item.confidence >= 50) return `Verkar återkommande.${singleMonthNote}`;
+  if (item.occurrences >= 2) return `Hittad flera gånger i importen.${singleMonthNote}`;
+  return `Importerad transaktion som behöver granskas.${singleMonthNote}`;
+}
+
+export function getActionableRecurringCandidates(items: RecurringExpense[]) {
+  return items.filter(isActionableRecurringCandidate);
+}
+
 export function detectRecurring(transactions: Transaction[], accounts: Account[], rules: Rule[], transferDecisions: Record<string, TransferDecision>): DetectionResult {
   const transfers = matchTransfers(transactions, accounts, transferDecisions);
   const neutralIds = transferTxIds(transfers, transferDecisions);
@@ -153,7 +180,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
   for (const t of sorted) {
     if (neutralIds.has(t.id)) continue;
     const cat = categorize(t.description, rules);
-    if (cat.costType === 'transfer') continue;
+    if (cat.costType === 'transfer' || cat.costType === 'excluded') continue;
 
     const direction: Direction = t.amount >= 0 ? 'income' : 'expense';
     if (direction === 'income' && Math.abs(t.amount) >= 3000) largePositive.push(t);
@@ -263,16 +290,14 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
 
     if (direction === 'income') dedup.forEach(t => recurringIncomeTxIds.add(t.id));
 
-    if (confidence < 50 && shouldSurfaceLowConfidence(item, direction, cat, normName)) {
+    if (confidence < 50 && (shouldSurfaceLowConfidence(item, direction, cat, normName) || isActionableRecurringCandidate(item))) {
       reviewItems.push({
         id: `lowconf_${item.id}`,
         type: 'low_confidence',
         description: item.label,
         amount: direction === 'income' ? item.monthlyAmount : -item.monthlyAmount,
         date: item.lastDate,
-        note: direction === 'income'
-          ? 'Ser nästan ut som återkommande inkomst, men Klirr vill att du bekräftar innan den räknas som normal månadsinkomst.'
-          : 'Ser nästan ut som en återkommande kostnad, men Klirr vill att du bekräftar innan den hamnar i månadskalkylen.',
+        note: actionableCandidateReason(item),
         recurringId: item.id,
       });
     }

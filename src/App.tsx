@@ -4,11 +4,14 @@ import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
 import { buddySuggestions, initialBuddyMessage, makeBuddyReply } from './lib/budgetBuddy';
+import { knowledgeBaseCategories } from './data/recurringKnowledgeBase';
 import { BANK_FORMATS, type BankKey, detectBank, guessMapping, parseCsvToRows, parseRowsWithMapping, readCsvTable, rowsToTransactions, transactionFingerprint } from './lib/csvParsers';
+import { decodeTextFile } from './lib/fileDecoding';
+import { supportedBankFormats } from './lib/bankFormats';
 import { exportBudgetReport, exportTransactionsCsv } from './lib/exporters';
 import { fmt, fmtSigned, pct, todayIso, uid } from './lib/format';
 import { categorize } from './lib/rulesEngine';
-import { detectRecurring } from './lib/recurrenceEngine';
+import { actionableCandidateReason, detectRecurring, getActionableRecurringCandidates } from './lib/recurrenceEngine';
 import { getEntitlements } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
 import { appendBuddyActionHistory, applyBuddyActionWithResult, findPendingBuddyAction } from './lib/buddyActions';
@@ -159,7 +162,7 @@ export default function App() {
 
   const setPartial = (patch: Partial<AppState>) => setState(prev => ({ ...prev, ...patch }));
   const badges: Partial<Record<TabId, number>> = {
-    importReview: detection.reviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length,
+    importReview: detection.reviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + getActionableRecurringCandidates(detection.recurring).filter(r => !state.recurringDecisions[r.id]?.status).length,
   };
 
   function selectTab(nextTab: TabId) {
@@ -242,7 +245,7 @@ export default function App() {
         {!state.onboardingCompleted && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} />}
         {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
         {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
-        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} />}
+        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} />}
         {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
         {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {state.onboardingCompleted && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false }); selectTab('dashboard'); }} />}
@@ -354,12 +357,13 @@ function PlanView({ active, setActive, summary, scenarioSummary, state, setState
   </>;
 }
 
-function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void }) {
+function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo, setTab }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void; setTab: (tab: TabId) => void }) {
   const transferCount = detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length;
-  const recurringCount = detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length;
+  const actionableRecurring = getActionableRecurringCandidates(detection.recurring);
+  const recurringCount = actionableRecurring.filter(r => !state.recurringDecisions[r.id]?.status).length;
   return <><PageTitle title="Import & granskning" subtitle="Importera kontoutdrag och granska hur Klirr tolkar transaktioner, överföringar och återkommande poster." />
     <SectionTabs<ImportReviewSection> active={active} onChange={setActive} items={[{ id: 'import', label: 'Importera' }, { id: 'accounts', label: 'Konton' }, { id: 'transactions', label: 'Transaktioner' }, { id: 'transfers', label: 'Överföringar', badge: transferCount }, { id: 'recurring', label: 'Återkommande', badge: recurringCount }, { id: 'review', label: 'Oklara poster', badge: detection.reviewItems.length }]} />
-    {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
+    {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} rules={state.rules} transferDecisions={state.transferDecisions} loadDemo={loadDemo} onImported={(section = 'recurring') => setActive(section)} onAskBuddy={() => setTab('buddy')} />}
     {active === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} setAccounts={(accounts) => setPartial({ accounts })} />}
     {active === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
     {active === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
@@ -410,7 +414,8 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
     try {
       const currentDate = new Date().toISOString();
       const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
-      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const actionableCandidates = getActionableRecurringCandidates(detection.recurring);
+      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, supportedBankFormats: supportedBankFormats().map(f => f.label), possibleEncodingIssue: state.transactions.some(t => t.importWarnings?.some(w => w.includes('encoding'))), knowledgeBaseCategories: knowledgeBaseCategories(), transactionCount: state.transactions.length, reviewCount: detection.reviewItems.length, transferCandidateCount: detection.transfers.length, transferCount: detection.transfers.length, recurringCandidateCountsByType: { income: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, fixed: actionableCandidates.filter(r => r.costTypeDefault === 'fixed').length, variable: actionableCandidates.filter(r => r.costTypeDefault === 'variable').length }, recurringCandidateCount: actionableCandidates.length, actionableIncomeCandidateCount: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, actionableExpenseCandidateCount: actionableCandidates.filter(r => r.costTypeDefault !== 'income').length, confirmedRecurringCount: detection.recurring.filter(r => state.recurringDecisions[r.id]?.status === 'confirmed').length, unconfirmedRecurringCount: actionableCandidates.filter(r => state.recurringDecisions[r.id]?.status !== 'confirmed' && state.recurringDecisions[r.id]?.status !== 'rejected').length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
       const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
@@ -526,13 +531,13 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary, householdPro
 }
 
 function RecurringView({ detection, decisions, setDecisions, addRule }: { detection: DetectionResult; decisions: Record<string, RecurringDecision>; setDecisions: (d: Record<string, RecurringDecision>) => void; addRule: (r: Rule) => void }) {
-  const items = detection.recurring.filter(r => r.confidence >= 50);
+  const items = getActionableRecurringCandidates(detection.recurring);
   const incomeItems = items.filter(r => r.costTypeDefault === 'income').length;
   const expenseItems = items.length - incomeItems;
   function patch(id: string, p: Partial<RecurringDecision>) { const current: RecurringDecision = decisions[id] || { status: 'pending' }; setDecisions({ ...decisions, [id]: { ...current, ...p } }); }
   return <><PageTitle title="Återkommande inkomster och utgifter" subtitle="Bekräfta vad Klirr ska räkna med framåt. Inkomster räknas inte in förrän du bekräftar dem." />
     <Card className="soft"><div className="row"><span className="pill green">{incomeItems} möjliga inkomster</span><span className="pill">{expenseItems} möjliga utgifter</span><span className="pill warn">Obekräftade poster behöver kollas</span></div></Card>
-    <div className="stack">{items.map(r => { const d = decisions[r.id]; const status = d?.status || 'pending'; const currentCostType = d?.costType || r.costTypeDefault; const isIncome = currentCostType === 'income'; return <Card key={r.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{r.label}</b><br/><small style={{ color: 'var(--muted)' }}>{r.category} · {costTypeLabel(currentCostType)} · {frequencyLabel(r.frequency)} · {r.occurrences} förekomster · {r.confidence}% · {r.reason}</small></div><b className={`mono ${isIncome ? 'amount-pos' : ''}`}>{isIncome ? '+' : ''}{fmt(d?.monthlyAmountOverride ?? r.monthlyAmount)}/mån</b></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 180 }} value={currentCostType} onChange={e => patch(r.id, { costType: e.target.value as RecurringDecision['costType'] })}><option value="fixed">Fast utgift</option><option value="variable">Rörlig utgift</option><option value="income">Inkomst</option></select><input className="input" style={{ maxWidth: 130 }} type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => patch(r.id, { monthlyAmountOverride: Number(e.target.value) })} /><button className="btn small primary" onClick={() => patch(r.id, { status: 'confirmed' })}>Bekräfta</button><button className="btn small" onClick={() => patch(r.id, { status: 'rejected' })}>Räkna bort</button><button className="btn small" onClick={() => addRule({ id: uid('rule'), matchText: r.normName.split(' ')[0], category: r.category, costType: currentCostType || r.costTypeDefault })}>Spara regel</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!items.length && <Empty>Inga säkra återkommande kandidater hittade än.</Empty>}</div></>;
+    <div className="stack">{items.map(r => { const d = decisions[r.id]; const status = d?.status || 'pending'; const currentCostType = d?.costType || r.costTypeDefault; const isIncome = currentCostType === 'income'; return <Card key={r.id}><div className="row" style={{ justifyContent: 'space-between' }}><div><b>{r.label}</b><br/><small style={{ color: 'var(--muted)' }}>{r.category} · {costTypeLabel(currentCostType)} · {frequencyLabel(r.frequency)} · {r.occurrences} förekomster · {r.confidence}% · {actionableCandidateReason(r)} · {r.reason}</small></div><b className={`mono ${isIncome ? 'amount-pos' : ''}`}>{isIncome ? '+' : ''}{fmt(d?.monthlyAmountOverride ?? r.monthlyAmount)}/mån</b></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 180 }} value={currentCostType} onChange={e => patch(r.id, { costType: e.target.value as RecurringDecision['costType'] })}><option value="fixed">Fast utgift</option><option value="variable">Rörlig utgift</option><option value="income">Inkomst</option></select><input className="input" style={{ maxWidth: 130 }} type="number" value={d?.monthlyAmountOverride ?? Math.round(r.monthlyAmount)} onChange={e => patch(r.id, { monthlyAmountOverride: Number(e.target.value) })} /><button className="btn small primary" onClick={() => patch(r.id, { status: 'confirmed' })}>Bekräfta</button><button className="btn small" onClick={() => patch(r.id, { status: 'rejected' })}>Räkna bort</button><button className="btn small" onClick={() => addRule({ id: uid('rule'), matchText: r.normName.split(' ')[0], category: r.category, costType: currentCostType || r.costTypeDefault })}>Spara regel</button><span className={`pill ${statusTone(status)}`}>{statusLabel(status)}</span></div></Card>; })}{!items.length && <Empty>Inga återkommande kandidater att granska just nu.</Empty>}</div></>;
 }
 
 function ReviewView({ detection, recurringDecisions, setRecurringDecisions }: { detection: DetectionResult; recurringDecisions: Record<string, RecurringDecision>; setRecurringDecisions: (d: Record<string, RecurringDecision>) => void }) {
@@ -595,9 +600,11 @@ function RulesView({ rules, setRules }: { rules: Rule[]; setRules: (r: Rule[]) =
   </>;
 }
 
-function ImportView({ accounts, setAccounts, transactions, setTransactions, loadDemo }: { accounts: Account[]; setAccounts: (a: Account[]) => void; transactions: Transaction[]; setTransactions: (t: Transaction[]) => void; loadDemo: () => void }) {
+function ImportView({ accounts, setAccounts, transactions, setTransactions, rules, transferDecisions, loadDemo, onImported, onAskBuddy }: { accounts: Account[]; setAccounts: (a: Account[]) => void; transactions: Transaction[]; setTransactions: (t: Transaction[]) => void; rules: Rule[]; transferDecisions: Record<string, TransferDecision>; loadDemo: () => void; onImported: (section?: ImportReviewSection) => void; onAskBuddy: () => void }) {
   const [pending, setPending] = useState<{ fileName: string; raw: string; bankKey: BankKey; accountName: string; isOwn: boolean; useExistingAccountId: string; rows: ReturnType<typeof parseCsvToRows>; mapping: { date: string; description: string; amount: string }; duplicateCount: number; skipDuplicates: boolean } | null>(null);
   const [csvText, setCsvText] = useState('');
+  const [lastImportSummary, setLastImportSummary] = useState('');
+  const [lastEncodingInfo, setLastEncodingInfo] = useState<{ encoding: string; hadReplacementCharacters: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const sampleCsv = `Datum;Beskrivning;Belopp
@@ -639,11 +646,11 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, load
     buildPending(raw, sourceName, detectBank(raw));
   }
 
-  function handleFile(file?: File) {
+  async function handleFile(file?: File) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => prepareImport(String(e.target?.result || ''), file.name);
-    reader.readAsText(file);
+    const decoded = await decodeTextFile(file);
+    setLastEncodingInfo({ encoding: decoded.encoding, hadReplacementCharacters: decoded.hadReplacementCharacters });
+    prepareImport(decoded.text, file.name);
   }
 
   function updatePending(patch: Partial<NonNullable<typeof pending>>) {
@@ -665,11 +672,16 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, load
     }
     const existing = new Set(transactions.map(transactionFingerprint));
     let imported = rowsToTransactions(pending.rows, accountId);
+    if (lastEncodingInfo?.hadReplacementCharacters) imported = imported.map(t => ({ ...t, importWarnings: [...(t.importWarnings || []), 'encoding_replacement_characters'] }));
     if (pending.skipDuplicates) imported = imported.filter(t => !existing.has(transactionFingerprint(t)));
     setAccounts(nextAccounts);
     setTransactions([...transactions, ...imported]);
+    const previewDetection = detectRecurring([...transactions, ...imported], nextAccounts, rules, transferDecisions);
+    const actionable = getActionableRecurringCandidates(previewDetection.recurring);
+    setLastImportSummary(`Importerade ${imported.length} transaktioner${lastEncodingInfo ? ` (${lastEncodingInfo.encoding}${lastEncodingInfo.hadReplacementCharacters ? ', möjlig encoding-varning' : ''})` : ''}. Klirr hittade ${actionable.filter(r => r.costTypeDefault === 'income').length} möjliga inkomster, ${actionable.filter(r => r.costTypeDefault !== 'income').length} möjliga måsten/återkommande utgifter, ${previewDetection.transfers.length} möjliga överföringar och ${previewDetection.reviewItems.length} oklara poster.`);
     setCsvText('');
     setPending(null);
+    onImported();
   }
 
   const headers = pending ? readCsvTable(pending.raw).headers : [];
@@ -680,6 +692,8 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, load
       <Card><h3>Snabbstart</h3><div className="stack"><p style={{ color: 'var(--muted)' }}>Använd fiktiv demo-data om du bara vill visa Klirr utan riktiga kontoutdrag.</p><button className="btn primary" onClick={loadDemo}>✨ Ladda demo-data</button></div></Card>
       <Card><h3>Importera fil</h3><div className="stack"><p style={{ color: 'var(--muted)' }}>Välj CSV/TXT från dator eller mobil. Testa gärna ett anonymiserat utdrag först.</p><button className="btn primary" onClick={() => fileRef.current?.click()}>Välj CSV-fil</button><input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={e => handleFile(e.target.files?.[0])} /></div></Card>
     </div>
+
+    {lastImportSummary && <Card className="soft"><h3>Importen är klar</h3><p>{lastImportSummary}</p><div className="row"><button className="btn primary" onClick={() => onImported('recurring')}>Granska återkommande</button><button className="btn" onClick={() => onImported('transfers')}>Granska överföringar</button><button className="btn" onClick={onAskBuddy}>Fråga Budget Buddy</button></div></Card>}
 
     <Card><h3>Klistra in CSV</h3><p style={{ color: 'var(--muted)' }}>Fallback om filväljaren strular. Formatet kan vara med semikolon, tabbar eller komma.</p><textarea className="textarea" rows={9} placeholder={sampleCsv} value={csvText} onChange={e => setCsvText(e.target.value)} /><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => prepareImport(csvText, 'inklippt-kontoutdrag.csv')}>Analysera inklistrad CSV</button><button className="btn" onClick={() => setCsvText(sampleCsv)}>Fyll med exempel</button><button className="btn ghost" onClick={() => { setCsvText(''); setPending(null); }}>Rensa</button></div></Card>
 

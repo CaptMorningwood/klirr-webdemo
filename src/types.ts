@@ -34,7 +34,13 @@ export interface Transaction {
   date: string;
   description: string;
   amount: number;
+  originalDescription?: string;
+  counterparty?: string;
+  bankReference?: string;
+  balanceAfter?: number;
   raw?: Record<string, unknown>;
+  sourceBank?: string;
+  importWarnings?: string[];
 }
 
 export interface Rule {
