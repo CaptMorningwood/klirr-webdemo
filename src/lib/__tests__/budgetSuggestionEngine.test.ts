@@ -6,6 +6,49 @@ function amount(result: ReturnType<typeof suggestVariableBudget>, label: string)
 }
 
 describe('budgetSuggestionEngine', () => {
+  const realisticFamilyProfile = { adults: 2, teens: 1, children: 2, pets: 0, foodAmbition: 'normal' as const, transportNeed: 'low' as const };
+
+  it('reserves safety first for the reported 12855 kr safe family budget', () => {
+    const available = 12855;
+    const result = suggestVariableBudget({ available, mode: 'safe', householdProfile: realisticFamilyProfile });
+    const food = amount(result, 'Mat och hushåll');
+
+    expect(result.items.reduce((sum, item) => sum + item.amount, 0) + result.marginLeft).toBeLessThanOrEqual(available);
+    expect(result.marginLeft).toBeGreaterThan(0);
+    expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.12);
+    expect(food).toBeLessThanOrEqual(available * 0.65);
+    expect(food).toBeLessThan(10000);
+    expect(amount(result, 'Nöje')).toBeGreaterThanOrEqual(0);
+    expect(result.guidelineComparison.food.status).toBe('below');
+    expect(result.explanationNotes.join(' ')).toMatch(/tajt kassaflödesläge|prioriterar kassaflöde/i);
+  });
+
+  it('keeps a review-worthy but non-zero safety reserve for a 9900 kr safe family budget', () => {
+    const available = 9900;
+    const result = suggestVariableBudget({ available, mode: 'safe', householdProfile: realisticFamilyProfile });
+    const food = amount(result, 'Mat och hushåll');
+
+    expect(food).toBeLessThanOrEqual(available * 0.65);
+    expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.08);
+    expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.12);
+    expect(result.items.reduce((sum, item) => sum + item.amount, 0) + result.marginLeft).toBeLessThanOrEqual(available);
+    expect(result.explanationNotes.join(' ')).toMatch(/tajt|granskas manuellt|behöver granskas/i);
+  });
+
+  it('keeps 25000 kr safe family categories near references and sends leftover to safety', () => {
+    const available = 25000;
+    const result = suggestVariableBudget({ available, mode: 'safe', householdProfile: realisticFamilyProfile });
+    const food = amount(result, 'Mat och hushåll');
+
+    expect(food).toBeLessThanOrEqual(result.guidelineComparison.food.referenceAmount * 1.05);
+    expect(food).toBeGreaterThan(result.guidelineComparison.food.referenceAmount * 0.8);
+    expect(result.marginLeft).toBeGreaterThanOrEqual(available * 0.1);
+    expect(amount(result, 'Buffert/sparande')).toBeGreaterThanOrEqual(available * 0.08);
+    expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.15);
+    expect(amount(result, 'Nöje')).toBeLessThan(available * 0.2);
+    expect(amount(result, 'Övrigt hushåll')).toBeLessThan(available * 0.15);
+  });
+
   it('caps food for a high-income 2 adult and 2 child household and sends excess to safety', () => {
     const householdProfile = { adults: 2, children: 2, teens: 0, pets: 0, foodAmbition: 'normal' as const, transportNeed: 'normal' as const };
     const result = suggestVariableBudget({ available: 90000, mode: 'safe', householdProfile });
