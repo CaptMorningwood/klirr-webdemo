@@ -42,12 +42,12 @@ export function calculateBudget(input: {
     const costType = d?.costType || r.costTypeDefault;
     const line: BudgetLine = {
       id: r.id,
-      label: r.label,
+      label: d?.labelOverride ?? r.label,
       amount: d?.monthlyAmountOverride ?? r.monthlyAmount,
       category: d?.category ?? r.category,
       source: 'recurring',
       confidence: r.confidence,
-      frequency: r.frequency,
+      frequency: d?.frequencyOverride ?? r.frequency,
     };
     activeRecurring.push(line);
     if (costType === 'income') {
