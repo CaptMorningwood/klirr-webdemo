@@ -20,6 +20,7 @@ import { appendBuddyActionHistory, applyBuddyActionWithResult, findPendingBuddyA
 import { detectBuddyActionIntent } from './lib/buddyActionIntents';
 import { estimateSwedishNetSalary } from './lib/taxEstimate';
 import { deleteAccountAndRelatedData } from './lib/accountDeletion';
+import { buildImportChecklist, buildImportResultSummary, importBuddyCleanupMessage, type ImportResultSummary } from './lib/importSummary';
 import { planBuddyAction } from './lib/buddyActionPlanner';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
@@ -150,6 +151,7 @@ export default function App() {
   const [moreSection, setMoreSection] = useState<MoreSection>('settings');
   const [loaded, setLoaded] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [buddyAutoMessage, setBuddyAutoMessage] = useState('');
 
   useEffect(() => { setLoaded(true); }, []);
   useEffect(() => { if (loaded) saveState(state); }, [state, loaded]);
@@ -253,9 +255,9 @@ export default function App() {
         {!state.onboardingCompleted && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} />}
         {state.onboardingCompleted && tab === 'dashboard' && <DashboardView summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
         {state.onboardingCompleted && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} detection={detection} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
-        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} />}
+        {state.onboardingCompleted && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} onBuddyCleanup={() => { setBuddyAutoMessage(importBuddyCleanupMessage); selectTab('buddy'); }} />}
         {state.onboardingCompleted && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} summary={summary} detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
-        {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
+        {state.onboardingCompleted && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} autoMessage={buddyAutoMessage} onAutoMessageHandled={() => setBuddyAutoMessage('')} />}
         {state.onboardingCompleted && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false }); selectTab('dashboard'); }} />}
       </main>
 
@@ -365,13 +367,13 @@ function PlanView({ active, setActive, summary, scenarioSummary, detection, stat
   </>;
 }
 
-function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo, setTab, visibleReviewItems }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void; setTab: (tab: TabId) => void; visibleReviewItems: DetectionResult['reviewItems'] }) {
+function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo, setTab, visibleReviewItems, onBuddyCleanup }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void; setTab: (tab: TabId) => void; visibleReviewItems: DetectionResult['reviewItems']; onBuddyCleanup: () => void }) {
   const transferCount = detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length;
   const actionableRecurring = getActionableRecurringCandidates(detection.recurring);
   const recurringCount = actionableRecurring.filter(r => !state.recurringDecisions[r.id]?.status).length;
   return <><PageTitle title="Import & granskning" subtitle="Importera kontoutdrag och granska hur Klirr tolkar transaktioner, överföringar och återkommande poster." />
     <SectionTabs<ImportReviewSection> active={active} onChange={setActive} items={[{ id: 'import', label: 'Importera' }, { id: 'accounts', label: 'Konton' }, { id: 'transactions', label: 'Transaktioner' }, { id: 'transfers', label: 'Överföringar', badge: transferCount }, { id: 'recurring', label: 'Återkommande', badge: recurringCount }, { id: 'review', label: 'Oklara poster', badge: visibleReviewItems.length }]} />
-    {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} rules={state.rules} transferDecisions={state.transferDecisions} loadDemo={loadDemo} onImported={(section = 'recurring') => setActive(section)} onAskBuddy={() => setTab('buddy')} />}
+    {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} rules={state.rules} transferDecisions={state.transferDecisions} loadDemo={loadDemo} onImported={(section = 'recurring') => setActive(section)} onAskBuddy={onBuddyCleanup} />}
     {active === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} state={state} setState={(nextState) => setPartial(nextState)} />}
     {active === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
     {active === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
@@ -388,11 +390,12 @@ function MoreView({ active, setActive, state, setState, onReset, loadDemo }: { a
   </>;
 }
 
-function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, setScenarioOff }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void }) {
+function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, setScenarioOff, autoMessage, onAutoMessageHandled }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void; autoMessage?: string; onAutoMessageHandled?: () => void }) {
   const [draft, setDraft] = useState('');
   const [buddyBusy, setBuddyBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [state.chatMessages]);
+  useEffect(() => { if (autoMessage && !buddyBusy) { onAutoMessageHandled?.(); void send(autoMessage); } }, [autoMessage, buddyBusy]);
 
   function updateActionStatus(actionId: string, status: BuddyProposedAction['status'], baseState = state) {
     return { ...baseState, chatMessages: baseState.chatMessages.map(m => m.proposedAction?.id === actionId ? { ...m, proposedAction: { ...m.proposedAction, status } as BuddyProposedAction } : m) };
@@ -682,7 +685,7 @@ function RulesView({ rules, setRules }: { rules: Rule[]; setRules: (r: Rule[]) =
 function ImportView({ accounts, setAccounts, transactions, setTransactions, rules, transferDecisions, loadDemo, onImported, onAskBuddy }: { accounts: Account[]; setAccounts: (a: Account[]) => void; transactions: Transaction[]; setTransactions: (t: Transaction[]) => void; rules: Rule[]; transferDecisions: Record<string, TransferDecision>; loadDemo: () => void; onImported: (section?: ImportReviewSection) => void; onAskBuddy: () => void }) {
   const [pending, setPending] = useState<{ fileName: string; raw: string; bankKey: BankKey; accountName: string; isOwn: boolean; useExistingAccountId: string; rows: ReturnType<typeof parseCsvToRows>; mapping: { date: string; description: string; amount: string }; duplicateCount: number; skipDuplicates: boolean } | null>(null);
   const [csvText, setCsvText] = useState('');
-  const [lastImportSummary, setLastImportSummary] = useState('');
+  const [lastImportSummary, setLastImportSummary] = useState<ImportResultSummary | null>(null);
   const [lastEncodingInfo, setLastEncodingInfo] = useState<{ encoding: string; hadReplacementCharacters: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -752,12 +755,12 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, rule
     const existing = new Set(transactions.map(transactionFingerprint));
     let imported = rowsToTransactions(pending.rows, accountId);
     if (lastEncodingInfo?.hadReplacementCharacters) imported = imported.map(t => ({ ...t, importWarnings: [...(t.importWarnings || []), 'encoding_replacement_characters'] }));
+    const skippedDuplicateCount = pending.skipDuplicates ? imported.filter(t => existing.has(transactionFingerprint(t))).length : 0;
     if (pending.skipDuplicates) imported = imported.filter(t => !existing.has(transactionFingerprint(t)));
     setAccounts(nextAccounts);
     setTransactions([...transactions, ...imported]);
     const previewDetection = detectRecurring([...transactions, ...imported], nextAccounts, rules, transferDecisions);
-    const actionable = getActionableRecurringCandidates(previewDetection.recurring);
-    setLastImportSummary(`Importerade ${imported.length} transaktioner${lastEncodingInfo ? ` (${lastEncodingInfo.encoding}${lastEncodingInfo.hadReplacementCharacters ? ', möjlig encoding-varning' : ''})` : ''}. Klirr hittade ${actionable.filter(r => r.costTypeDefault === 'income').length} möjliga inkomster, ${actionable.filter(r => r.costTypeDefault !== 'income').length} möjliga måsten/återkommande utgifter, ${previewDetection.transfers.length} möjliga överföringar och ${previewDetection.reviewItems.length} oklara poster.`);
+    setLastImportSummary(buildImportResultSummary({ importedTransactionCount: imported.length, skippedDuplicateCount, encodingInfo: lastEncodingInfo, detection: previewDetection }));
     setCsvText('');
     setPending(null);
     onImported();
@@ -772,7 +775,7 @@ function ImportView({ accounts, setAccounts, transactions, setTransactions, rule
       <Card><h3>Importera fil</h3><div className="stack"><p style={{ color: 'var(--muted)' }}>Välj CSV/TXT från dator eller mobil. Testa gärna ett anonymiserat utdrag först.</p><button className="btn primary" onClick={() => fileRef.current?.click()}>Välj CSV-fil</button><input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={e => handleFile(e.target.files?.[0])} /></div></Card>
     </div>
 
-    {lastImportSummary && <Card className="soft"><h3>Importen är klar</h3><p>{lastImportSummary}</p><div className="row"><button className="btn primary" onClick={() => onImported('recurring')}>Granska återkommande</button><button className="btn" onClick={() => onImported('transfers')}>Granska överföringar</button><button className="btn" onClick={onAskBuddy}>Fråga Budget Buddy</button></div></Card>}
+    {lastImportSummary && <Card className="soft"><h3>Importen är klar ✨</h3><p>Nu behöver Klirr bara få lite hjälp att tolka vad som är vad. Börja här så undviker vi dubbelräkning.</p><div className="grid grid-3 compact-grid"><MetricCard label="Importerade rader" value={String(lastImportSummary.importedTransactionCount)} /><MetricCard label="Överhoppade dubletter" value={String(lastImportSummary.skippedDuplicateCount)} /><MetricCard label="Möjliga inkomster" value={String(lastImportSummary.possibleIncomeCount)} /><MetricCard label="Möjliga måsten/återkommande" value={String(lastImportSummary.possibleRecurringExpenseCount)} /><MetricCard label="Möjliga överföringar" value={String(lastImportSummary.possibleTransferCount)} /><MetricCard label="Oklara poster" value={String(lastImportSummary.unclearReviewItemCount)} /></div>{lastImportSummary.encodingInfo?.hadReplacementCharacters && <p className="hint" style={{ color: 'var(--warning)' }}>Encoding-varning: filen lästes som {lastImportSummary.encodingInfo.encoding}, men vissa tecken kan ha blivit fel. Kontrollera texter med konstiga symboler.</p>}<p className="hint">Budgeten kan se konstig ut innan du har granskat inkomster, återkommande poster och överföringar.</p><h4>Nästa steg</h4><div className="stack">{buildImportChecklist(lastImportSummary).map(item => <div className="list-line" key={item.id}><span>{item.label}{lastImportSummary.recommendedFirstStep === item.target && item.id !== 'buddy' ? <><br/><small>Rekommenderad första åtgärd</small></> : null}</span><button className={lastImportSummary.recommendedFirstStep === item.target ? 'btn small primary' : 'btn small'} onClick={() => item.target === 'buddy' ? onAskBuddy() : onImported(item.target)}>{item.buttonLabel}</button></div>)}</div><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={onAskBuddy}>Städa med Budget Buddy ✨</button></div></Card>}
 
     <Card><h3>Klistra in CSV</h3><p style={{ color: 'var(--muted)' }}>Fallback om filväljaren strular. Formatet kan vara med semikolon, tabbar eller komma.</p><textarea className="textarea" rows={9} placeholder={sampleCsv} value={csvText} onChange={e => setCsvText(e.target.value)} /><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => prepareImport(csvText, 'inklippt-kontoutdrag.csv')}>Analysera inklistrad CSV</button><button className="btn" onClick={() => setCsvText(sampleCsv)}>Fyll med exempel</button><button className="btn ghost" onClick={() => { setCsvText(''); setPending(null); }}>Rensa</button></div></Card>
 
