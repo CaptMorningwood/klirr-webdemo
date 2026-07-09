@@ -15,6 +15,7 @@ export type TabId =
   | 'scenarios'
   | 'import'
   | 'accounts'
+  | 'household'
   | 'settings';
 
 export interface Account {
@@ -132,6 +133,20 @@ export interface BuddyAction {
   message?: string;
 }
 
+export type HouseholdType = 'single' | 'couple' | 'family' | 'shared' | 'other';
+export type FoodAmbition = 'budget' | 'normal' | 'comfortable';
+export type TransportNeed = 'low' | 'normal' | 'high';
+
+export interface HouseholdProfile {
+  adults: number;
+  children: number;
+  teens: number;
+  pets?: number;
+  householdType?: HouseholdType;
+  foodAmbition?: FoodAmbition;
+  transportNeed?: TransportNeed;
+}
+
 export interface AppState {
   accounts: Account[];
   transactions: Transaction[];
@@ -143,6 +158,7 @@ export interface AppState {
   transferDecisions: Record<string, TransferDecision>;
   scenarioOff: string[];
   chatMessages: ChatMessage[];
+  householdProfile?: HouseholdProfile;
 }
 
 export interface DetectionResult {
