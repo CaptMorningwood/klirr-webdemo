@@ -12,6 +12,11 @@ export interface BuddyContext {
   actionableExpenseCandidateCount?: number;
   confirmedRecurringCount?: number;
   unconfirmedRecurringCount?: number;
+  supportedBankFormats?: string[];
+  possibleEncodingIssue?: boolean;
+  recurringCandidateCountsByType?: Record<string, number>;
+  knowledgeBaseCategories?: string[];
+  transferCandidateCount?: number;
 }
 
 export function initialBuddyMessage(): ChatMessage {
@@ -48,6 +53,9 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
     const variable = [...s.variableItems].sort((a, b) => b.amount - a.amount).slice(0, 4);
     content = `Tre rimliga förbättringsspår:\n\n1. Justera rörlig plan. Det är snabbast och påverkar direkt. Rörlig plan är nu ${fmt(s.variablePlanTotal)}.\n2. Testa scenario på större valfria poster. Små abonnemang kan hjälpa, men en större kostnad gör mer skillnad.\n3. Bekräfta oklara poster så du inte budgeterar för engångar.\n\nStörsta rörliga/justerbara posterna just nu:\n${variable.map((v) => `• ${v.label}: ${fmt(v.amount)}`).join('\n') || 'Jag hittar inga rörliga poster än.'}`;
     actions.push({ label: 'Gå till Plan', tab: 'plan' }, { label: 'Bygg scenario', tab: 'scenarios' });
+  } else if (q.includes('vilka typer') || q.includes('letar klirr') || q.includes('måste') || q.includes('måsten') || q.includes('matköp') || q.includes('avanza') || q.includes('inte en utgift')) {
+    content = `Klirr letar efter vanliga måsten som boende, el/värme/vatten, försäkringar, lån/skulder, bredband, mobil, fack/a-kassa, gym, barn/familj och abonnemang. Matköp, fika, restaurang, apotek, drivmedel och parkering räknas oftast som rörliga köp i stället för återkommande måsten 💡\n\nAvanza, Nordnet, ISK, sparkonto, top-up och överföringar mellan egna konton behandlas normalt som sparande/interna överföringar, inte konsumtionsutgifter. Refunds/returer räknas inte som normal inkomst.`;
+    actions.push({ label: 'Granska återkommande', tab: 'recurring' }, { label: 'Visa överföringar', tab: 'transfers' });
   } else if (q.includes('oklar') || q.includes('otydlig') || q.includes('granska')) {
     content = ctx.detection.reviewItems.length
       ? `Jag hittar ${ctx.detection.reviewItems.length} oklara poster. De vanligaste orsakerna är möjliga engångskostnader, dubletter, plusposter eller låg säkerhet i återkommande-detektionen. Börja med de största beloppen först.`

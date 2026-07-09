@@ -64,7 +64,8 @@ function monthlyAmountFor(freq: RecurringExpense['frequency'], meanAmount: numbe
 }
 
 function defaultCostType(direction: Direction, category: ReturnType<typeof categorize>): 'fixed' | 'variable' | 'income' {
-  if (direction === 'income') return 'income';
+  if (category.costType === 'excluded' || category.costType === 'transfer') return 'variable';
+  if (direction === 'income') return category.costType === 'income' ? 'income' : 'variable';
   if (category.costType === 'fixed') return 'fixed';
   return 'variable';
 }
@@ -179,7 +180,7 @@ export function detectRecurring(transactions: Transaction[], accounts: Account[]
   for (const t of sorted) {
     if (neutralIds.has(t.id)) continue;
     const cat = categorize(t.description, rules);
-    if (cat.costType === 'transfer') continue;
+    if (cat.costType === 'transfer' || cat.costType === 'excluded') continue;
 
     const direction: Direction = t.amount >= 0 ? 'income' : 'expense';
     if (direction === 'income' && Math.abs(t.amount) >= 3000) largePositive.push(t);

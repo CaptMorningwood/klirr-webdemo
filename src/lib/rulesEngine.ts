@@ -1,75 +1,50 @@
 import type { CostType, Rule } from '../types';
+import { recurringKnowledgeBase } from '../data/recurringKnowledgeBase';
 import { normalizeText } from './normalize';
 
-const DEFAULT_RULES: Array<{ kw: string; category: string; costType: CostType }> = [
-  { kw: 'hyra', category: 'Hyra', costType: 'fixed' },
-  { kw: 'bostad', category: 'Hyra', costType: 'fixed' },
-  { kw: 'hemlyftet', category: 'Hyra', costType: 'fixed' },
-  { kw: 'elbolaget', category: 'El', costType: 'fixed' },
-  { kw: 'vattenfall', category: 'El', costType: 'fixed' },
-  { kw: 'fortum', category: 'El', costType: 'fixed' },
-  { kw: 'bredband', category: 'Internet', costType: 'fixed' },
-  { kw: 'fiber', category: 'Internet', costType: 'fixed' },
-  { kw: 'telia', category: 'Telefoni/streaming', costType: 'fixed' },
-  { kw: 'försäkring', category: 'Försäkring', costType: 'fixed' },
-  { kw: 'trygghem', category: 'Försäkring', costType: 'fixed' },
-  { kw: 'lån', category: 'Lån/skuld', costType: 'fixed' },
-  { kw: 'finans', category: 'Lån/skuld', costType: 'fixed' },
-  { kw: 'inkasso', category: 'Skuld/inkasso', costType: 'variable' },
-  { kw: 'kronofogden', category: 'Skuld/inkasso', costType: 'variable' },
-  { kw: 'garage', category: 'Bil/transport', costType: 'fixed' },
-  { kw: 'parkering', category: 'Bil/transport', costType: 'variable' },
-  { kw: 'parkera', category: 'Bil/transport', costType: 'variable' },
-  { kw: 'bränsle', category: 'Bil/transport', costType: 'variable' },
-  { kw: 'gym', category: 'Träning', costType: 'fixed' },
-  { kw: 'tränings', category: 'Träning', costType: 'fixed' },
-  { kw: 'mat', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'ica', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'willys', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'coop', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'matboden', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'kvartersbutiken', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'storköp', category: 'Mat och hushåll', costType: 'variable' },
-  { kw: 'restaurang', category: 'Restaurang/nöje', costType: 'variable' },
-  { kw: 'kafé', category: 'Fika/nöje', costType: 'variable' },
-  { kw: 'top up', category: 'Intern överföring', costType: 'transfer' },
-  { kw: 'top-up', category: 'Intern överföring', costType: 'transfer' },
-  { kw: 'överföring', category: 'Intern överföring', costType: 'transfer' },
-  { kw: 'insättning från', category: 'Intern överföring', costType: 'transfer' },
-  { kw: 'avanza', category: 'Sparande', costType: 'transfer' },
-  { kw: 'lön', category: 'Lön', costType: 'income' },
-  { kw: 'lon', category: 'Lön', costType: 'income' },
-  { kw: 'salary', category: 'Lön', costType: 'income' },
-  { kw: 'arbetsgivare', category: 'Lön', costType: 'income' },
-  { kw: 'barnbidrag', category: 'Barnbidrag', costType: 'income' },
-  { kw: 'försäkringskassan', category: 'Försäkringskassan', costType: 'income' },
-  { kw: 'forsakringskassan', category: 'Försäkringskassan', costType: 'income' },
-  { kw: 'csn', category: 'CSN', costType: 'income' },
-  { kw: 'pension', category: 'Pension', costType: 'income' },
-  { kw: 'skatteverket', category: 'Skatteverket', costType: 'income' },
-  { kw: 'återbetalning skatt', category: 'Skatteverket', costType: 'income' },
-  { kw: 'sjukpenning', category: 'Försäkringskassan', costType: 'income' },
-  { kw: 'föräldrapenning', category: 'Försäkringskassan', costType: 'income' },
-];
+export interface CategorizationResult {
+  category: string;
+  costType: CostType;
+  source: 'user-rule' | 'knowledge-base' | 'pattern' | 'none';
+  confidence: number;
+  reasonCodes: string[];
+  knowledgeBaseId?: string;
+  explanation?: string;
+}
 
-export function categorize(descriptionOrNorm: string, rules: Rule[]) {
+function includesAny(norm: string, keywords: string[] = []) {
+  return keywords.some(keyword => norm.includes(normalizeText(keyword)));
+}
+
+export function categorize(descriptionOrNorm: string, rules: Rule[]): CategorizationResult {
   const norm = normalizeText(descriptionOrNorm);
   for (const rule of rules) {
     if (!rule.matchText.trim()) continue;
     const match = normalizeText(rule.matchText);
     if (norm.includes(match)) {
-      return { category: rule.category, costType: rule.costType, source: 'user-rule' as const };
+      return { category: rule.category, costType: rule.costType, source: 'user-rule', confidence: 98, reasonCodes: ['user_rule'], explanation: rule.note };
     }
   }
-  for (const rule of DEFAULT_RULES) {
-    if (norm.includes(rule.kw)) {
-      return { category: rule.category, costType: rule.costType, source: 'default' as const };
+
+  const refund = recurringKnowledgeBase.find(entry => entry.id === 'refunds');
+  if (refund && includesAny(norm, refund.keywords)) {
+    return { category: refund.category, costType: refund.costType, source: 'knowledge-base', confidence: 95, reasonCodes: ['knowledge_base', 'refund'], knowledgeBaseId: refund.id, explanation: refund.explanation };
+  }
+
+  for (const entry of recurringKnowledgeBase) {
+    if (entry.id === 'refunds') continue;
+    if (entry.excludeKeywords && includesAny(norm, entry.excludeKeywords)) continue;
+    if (includesAny(norm, entry.keywords)) {
+      return { category: entry.category, costType: entry.costType, source: 'knowledge-base', confidence: entry.recurringLikelihood === 'high' ? 90 : entry.recurringLikelihood === 'medium' ? 78 : 60, reasonCodes: ['knowledge_base', entry.id], knowledgeBaseId: entry.id, explanation: entry.explanation };
     }
   }
-  return { category: 'Okategoriserad', costType: 'variable' as CostType, source: 'none' as const };
+
+  return { category: 'Okategoriserad', costType: 'variable', source: 'none', confidence: 20, reasonCodes: ['no_rule_match'] };
 }
 
 export function isLikelyTransferText(description: string) {
+  const cat = categorize(description, []);
+  if (cat.costType === 'transfer') return true;
   const n = normalizeText(description);
-  return ['top up', 'topup', 'överföring', 'insättning från', 'till eget konto', 'avanza'].some(k => n.includes(k));
+  return ['top up', 'topup', 'överföring', 'overforing', 'insättning från', 'insattning fran', 'till eget konto', 'avanza', 'nordnet', 'isk', 'sparkonto', 'kortpåfyllning', 'kortpafyllning'].some(k => n.includes(k));
 }
