@@ -36,12 +36,25 @@ OPENAI_MODEL=gpt-4.1-mini
 
 Utan nycklar fungerar Klirr fortfarande som lokal demo.
 
-## Supabase
+## Supabase och Klirr-konto
 
 1. Skapa Supabase-projekt.
 2. Kör `supabase/schema.sql` i SQL Editor.
 3. Lägg in `VITE_SUPABASE_URL` och `VITE_SUPABASE_ANON_KEY` i Vercel.
-4. Under Inställningar i Klirr kan användare skapa konto/logga in och spara/hämta molnsnapshot.
+4. Aktivera Google som provider under Supabase Auth → Providers.
+5. Aktivera Apple som provider under Supabase Auth → Providers.
+6. Lägg till korrekta redirect URLs i Supabase Auth för lokal utveckling, Vercel Preview och produktion, till exempel:
+   - `http://localhost:5173/**`
+   - `https://*.vercel.app/**`
+   - `https://din-produktionsdomän.se/**`
+7. Kontrollera att samma miljövariabler finns i Vercel för Preview och Production:
+
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+Under Inställningar i Klirr blir panelen **Mitt Klirr-konto**. Där kan användare logga in med Google, Apple, magisk e-postlänk eller e-post/lösenord och sedan spara, hämta eller radera sin egen molnsnapshot. Utan Supabase-nycklar fungerar Klirr fortfarande i lokalt demo-läge.
 
 ## AI
 

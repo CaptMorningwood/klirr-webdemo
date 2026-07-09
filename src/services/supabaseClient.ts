@@ -13,6 +13,66 @@ export const supabase: SupabaseClient | null = supabaseConfigured
     })
   : null;
 
+const supabaseSetupMessage = 'Supabase är inte konfigurerat ännu. Lägg in VITE_SUPABASE_URL och VITE_SUPABASE_ANON_KEY i Vercel.';
+
+export type OAuthProvider = 'google' | 'apple';
+
+export type LinkedIdentity = {
+  id?: string;
+  provider?: string;
+  identity_data?: {
+    email?: string;
+    name?: string;
+    full_name?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+function getAuthRedirectUrl() {
+  if (typeof window === 'undefined') return undefined;
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+export async function signInWithOAuthProvider(provider: OAuthProvider) {
+  if (!supabase) throw new Error(supabaseSetupMessage);
+
+  return supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: getAuthRedirectUrl(),
+    },
+  });
+}
+
+export async function signInWithMagicLink(email: string) {
+  if (!supabase) throw new Error(supabaseSetupMessage);
+
+  return supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: getAuthRedirectUrl(),
+    },
+  });
+}
+
+export async function getLinkedIdentities(): Promise<LinkedIdentity[]> {
+  if (!supabase) return [];
+
+  const authWithIdentities = supabase.auth as typeof supabase.auth & {
+    getUserIdentities?: () => Promise<{
+      data?: { identities?: LinkedIdentity[] | null } | null;
+      error?: Error | null;
+    }>;
+  };
+
+  if (typeof authWithIdentities.getUserIdentities !== 'function') return [];
+
+  const { data, error } = await authWithIdentities.getUserIdentities();
+  if (error) throw error;
+  return (data?.identities || []) as unknown as LinkedIdentity[];
+}
+
 export async function getCurrentUser(): Promise<User | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
@@ -20,12 +80,12 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function signUpWithPassword(email: string, password: string) {
-  if (!supabase) throw new Error('Supabase är inte konfigurerat ännu. Lägg in VITE_SUPABASE_URL och VITE_SUPABASE_ANON_KEY i Vercel.');
+  if (!supabase) throw new Error(supabaseSetupMessage);
   return supabase.auth.signUp({ email, password });
 }
 
 export async function signInWithPassword(email: string, password: string) {
-  if (!supabase) throw new Error('Supabase är inte konfigurerat ännu. Lägg in VITE_SUPABASE_URL och VITE_SUPABASE_ANON_KEY i Vercel.');
+  if (!supabase) throw new Error(supabaseSetupMessage);
   return supabase.auth.signInWithPassword({ email, password });
 }
 
