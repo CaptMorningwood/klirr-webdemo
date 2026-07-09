@@ -82,3 +82,52 @@ describe('applyBuddyActionWithResult', () => {
     expect(result.state.incomes).toEqual(state.incomes);
   });
 });
+
+describe('buddyActionPlanner variable plan actions', () => {
+  const context = {
+    summary: { remainingAfterFixed: 12000 },
+    budgetSuggestion: {
+      items: [
+        { id: 'food', label: 'Mat och hushåll', amount: 7500, category: 'Mat', include: true },
+        { id: 'transport', label: 'Transport rörligt', amount: 900, category: 'Transport', include: true },
+        { id: 'fun', label: 'Nöje', amount: 500, category: 'Nöje', include: true },
+        { id: 'other', label: 'Övrigt hushåll', amount: 1000, category: 'Övrigt', include: true },
+        { id: 'buffer', label: 'Buffert/sparande', amount: 1200, category: 'Buffert', include: true },
+      ],
+      marginLeft: 900,
+    },
+  };
+
+  it('proposes update_variable_plan for new variable plan requests', () => {
+    const plan = planBuddyAction({ message: 'Kan du lägga upp en ny rörlig plan?', context });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+  });
+
+  it('proposes update_variable_plan for safer variable plan requests', () => {
+    const plan = planBuddyAction({ message: 'gör en tryggare rörlig plan', context });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+  });
+
+  it('uses recent plan discussion when user says to use it', () => {
+    const plan = planBuddyAction({
+      message: 'kör på den',
+      context,
+      recentMessages: [{ role: 'assistant', content: 'Förslag: Mat 7 500 kr, Transport 900 kr, Nöje 500 kr, Övrigt 1 000 kr, Buffert 1 200 kr.' }],
+    });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+  });
+
+  it('does not trigger on generic economy explanations', () => {
+    const plan = planBuddyAction({ message: 'förklara min ekonomi', context });
+    expect(plan.proposedAction).toBeUndefined();
+    expect(plan.intent).toBe('none');
+  });
+
+  it('parses explicit category amounts into the proposed plan', () => {
+    const plan = planBuddyAction({ message: 'Mat 7 500 kr, Transport 900 kr, Nöje 500 kr, Övrigt 1 000 kr, Buffert 1 200 kr', context });
+    expect(plan.proposedAction?.type).toBe('update_variable_plan');
+    if (plan.proposedAction?.type === 'update_variable_plan') {
+      expect(plan.proposedAction.payload.items.map(item => item.amount)).toEqual([7500, 900, 500, 1000, 1200]);
+    }
+  });
+});

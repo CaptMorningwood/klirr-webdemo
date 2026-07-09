@@ -23,7 +23,9 @@ export interface BuddyActionPlannerInput {
   variablePlan?: VariablePlanItem[];
   householdProfile?: HouseholdProfile;
   pendingAction?: BuddyProposedAction | null;
+  recentMessages?: Array<{ role?: string; content?: string }>;
 }
+
 
 function formatKr(amount: number) {
   return `${Math.round(amount).toLocaleString('sv-SE')} kr`;
@@ -51,8 +53,56 @@ function isTroubleshooting(message: string) {
   return /(varför|varfor|hände inget|hande inget|dök ingen|dok ingen|uppdaterades inte|ändrades inte|andrades inte|gjorde du|uppdaterade du|var sparas|vad måste jag göra)/i.test(message.toLowerCase());
 }
 
+
 function variableBudgetIntent(message: string) {
-  return /(tryggare|försiktig|forsiktig|rörlig budget|rörliga budget|budgetförslag|budgetforslag|föreslå.*budget|foresla.*budget|gör budgeten|gor budgeten|dra ner|minska .*budget|lägg mer på|lagg mer pa|använd trygg budget|anvand trygg budget)/i.test(message.toLowerCase());
+  const text = message.toLowerCase();
+  const directPlan = /(rörlig(?:a)? plan(?:en)?|ny(?:\s+rörlig)?\s+plan|lägg upp en plan|lagg upp en plan|gör en plan|gor en plan|ändra planen|andra planen|justera planen|använd planen|anvand planen|kör på planen|kor pa planen|fördela pengarna|fordela pengarna|planera det rörliga|vardagsbudget)/i.test(text);
+  const changePlan = /(mer buffert|mer sparande|mindre mat|mer nöje|mer noje|lägg .* på nöje|lagg .* pa noje|lägg .* på buffert|lagg .* pa buffert|minska .*mat|dra ner .*mat)/i.test(text);
+  const budgetPlan = /(tryggare|försiktig|forsiktig|tajtare).*(rörlig|plan|budget)|(?:rörlig|rörliga) budget|budgetförslag|budgetforslag|föreslå.*budget|foresla.*budget|gör budgeten|gor budgeten|använd trygg budget|anvand trygg budget/i.test(text);
+  return directPlan || changePlan || budgetPlan;
+}
+
+function variablePlanConfirmationIntent(message: string) {
+  return /^(\s*)(ja[,! ]*)?(gör så|gor sa|kör på det|kor pa det|kör på den|kor pa den|lägg in den|lagg in den|använd den(?: planen)?|anvand den(?: planen)?|det låter bra|det later bra|låter bra|later bra|så kör vi|sa kor vi)(\s*[!.]*)?$/i.test(message.toLowerCase());
+}
+
+const categoryAliases = [
+  { label: 'Mat och hushåll', category: 'Mat', pattern: /mat(?:\s+och\s+hushåll)?|hushåll/i },
+  { label: 'Transport rörligt', category: 'Transport', pattern: /transport(?:\s+rörligt)?|buss|bil|resor/i },
+  { label: 'Nöje', category: 'Nöje', pattern: /nöje|noje/i },
+  { label: 'Övrigt hushåll', category: 'Övrigt', pattern: /övrigt(?:\s+hushåll)?|ovrigt(?:\s+hushall)?/i },
+  { label: 'Buffert/sparande', category: 'Buffert', pattern: /buffert|sparande/i },
+];
+
+function parseAmount(raw: string) {
+  const cleaned = raw.replace(/\s/g, '').replace(',', '.');
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? Math.round(value) : NaN;
+}
+
+export function extractVariablePlanItemsFromText(text: string): Array<{ label: string; amount: number; category: string; include: boolean }> {
+  const source = text.replace(/\u00a0/g, ' ');
+  const found = new Map<string, { label: string; amount: number; category: string; include: boolean }>();
+  for (const alias of categoryAliases) {
+    const categorySource = alias.pattern.source;
+    const before = new RegExp(`(?:${categorySource})[^0-9]{0,30}(?:runt|ca|cirka|på|pa|till)?\\s*(\\d[\\d\\s]*(?:[,.]\\d+)?)\\s*(?:kr|kronor)?`, 'i');
+    const after = new RegExp(`(?:lägg|lagg|sätt|satt|ha)?\\s*(\\d[\\d\\s]*(?:[,.]\\d+)?)\\s*(?:kr|kronor)?\\s*(?:på|pa|till|i)?\\s*(?:${categorySource})`, 'i');
+    const match = source.match(before) || source.match(after);
+    if (!match) continue;
+    const amount = parseAmount(match[1]);
+    if (Number.isFinite(amount) && amount >= 0 && amount < 100000) found.set(alias.label, { label: alias.label, amount, category: alias.category, include: true });
+  }
+  return [...found.values()];
+}
+
+function recentVariablePlanText(input: BuddyActionPlannerInput) {
+  const recent = input.recentMessages || input.context?.recentMessages || input.context?.chatMessages || [];
+  return Array.isArray(recent) ? recent.slice(-8).map((m: any) => String(m?.content || '')).join('\n') : '';
+}
+
+function recentDiscussionWasVariablePlan(input: BuddyActionPlannerInput) {
+  const text = recentVariablePlanText(input);
+  return variableBudgetIntent(text) || extractVariablePlanItemsFromText(text).length >= 3;
 }
 
 function incomeKey(income: Pick<Income, 'id' | 'label'>) {
@@ -132,10 +182,11 @@ function makeVariablePlanAction(input: BuddyActionPlannerInput): BuddyActionPlan
   if (!Number.isFinite(available) || available <= 0) {
     return { intent: 'update_variable_budget', confidence: 'medium', clarificationQuestion: 'Jag behöver veta ungefär vad som finns kvar efter måsten innan jag föreslår en trygg rörlig budget 💡', missingInfo: ['remainingAfterFixed'] };
   }
+  const explicitItems = extractVariablePlanItemsFromText(`${input.message}\n${recentVariablePlanText(input)}`);
   const suggestion = input.context?.budgetSuggestion || suggestVariableBudget({ available, mode: 'safe', householdProfile: input.householdProfile, currentVariablePlan: input.variablePlan });
-  const items = Array.isArray(suggestion.items) ? suggestion.items : [];
+  const items = explicitItems.length >= 3 ? explicitItems : (Array.isArray(suggestion.items) ? suggestion.items : []);
   if (!items.length) return { intent: 'update_variable_budget', confidence: 'low', missingInfo: ['variablePlan'] };
-  return { intent: 'update_variable_budget', confidence: 'high', proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd trygg rörlig budget', description: 'Ersätt den rörliga planen med ett tryggare förslag. Inget ändras förrän du säger ja.', payload: { items: items.map((item: any) => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), marginLeft: Number(suggestion.marginLeft ?? suggestion.buffer ?? available), mode: 'safe', notes: suggestion.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd budgeten', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
+  return { intent: 'update_variable_budget', confidence: 'high', proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd ny rörlig plan', description: 'Ersätt den rörliga planen med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map((item: any) => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: available, marginLeft: Number(suggestion.marginLeft ?? suggestion.buffer ?? Math.max(0, available - items.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0))), mode: 'safe', notes: suggestion.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
 }
 
 export function planBuddyAction(input: BuddyActionPlannerInput): BuddyActionPlan {
@@ -143,6 +194,6 @@ export function planBuddyAction(input: BuddyActionPlannerInput): BuddyActionPlan
   const incomes = input.incomes || input.context?.incomes || [];
   if (isTroubleshooting(message)) return { intent: 'troubleshooting', confidence: 'high', explanationHints: ['Användaren felsöker tidigare Budget Buddy-action.'] };
   if (extractGrossSalary(message) || isSalaryIntentWithoutAmount(message)) return makeIncomeAction(message, incomes, input.context);
-  if (variableBudgetIntent(message)) return makeVariablePlanAction(input);
+  if (variableBudgetIntent(message) || extractVariablePlanItemsFromText(message).length >= 3 || (!input.pendingAction && variablePlanConfirmationIntent(message) && recentDiscussionWasVariablePlan(input))) return makeVariablePlanAction(input);
   return { intent: 'none', confidence: 'low' };
 }

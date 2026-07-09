@@ -223,16 +223,52 @@ function makeIncomeAction(message, context) {
   const action = { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Fält som ändras: Inkomst “${label}”. Lägg till cirka ${net.toLocaleString('sv-SE')} kr/mån.` : `Fält som ändras: Inkomst “${label}”. Ändra från ${Number(existing.amount || 0).toLocaleString('sv-SE')} kr till cirka ${net.toLocaleString('sv-SE')} kr/mån.`, payload: { incomeId: existing?.id, replaceMode, label, amount: net, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' };
   return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 ${replaceMode === 'add_new' ? 'Vill du att jag lägger till den inkomsten?' : `Vill du att jag uppdaterar “${label}” till det?`}`, actions: [], proposedAction: action };
 }
-function makeVariablePlanAction(message, context) {
-  if (!/(tryggare|tajtare|rörlig budget|rörliga budget|budgetförslag|föreslå.*budget|gör budgeten)/i.test(message)) return null;
+
+function variableBudgetIntent(message) {
+  const text = String(message || '').toLowerCase();
+  return /(rörlig(?:a)? plan(?:en)?|ny(?:\s+rörlig)?\s+plan|lägg upp en plan|lagg upp en plan|gör en plan|gor en plan|ändra planen|andra planen|justera planen|använd planen|anvand planen|kör på planen|kor pa planen|mer buffert|mer sparande|mindre mat|mer nöje|mer noje|fördela pengarna|fordela pengarna|planera det rörliga|vardagsbudget|tryggare.*(?:rörlig|plan|budget)|(?:rörlig|rörliga) budget|budgetförslag|budgetforslag)/i.test(text);
+}
+function variablePlanConfirmationIntent(message) {
+  return /^(\s*)(ja[,! ]*)?(gör så|gor sa|kör på det|kor pa det|kör på den|kor pa den|lägg in den|lagg in den|använd den(?: planen)?|anvand den(?: planen)?|det låter bra|det later bra|låter bra|later bra|så kör vi|sa kor vi)(\s*[!.]*)?$/i.test(String(message || '').toLowerCase());
+}
+const variableCategoryAliases = [
+  { label: 'Mat och hushåll', category: 'Mat', pattern: /mat(?:\s+och\s+hushåll)?|hushåll/i },
+  { label: 'Transport rörligt', category: 'Transport', pattern: /transport(?:\s+rörligt)?|buss|bil|resor/i },
+  { label: 'Nöje', category: 'Nöje', pattern: /nöje|noje/i },
+  { label: 'Övrigt hushåll', category: 'Övrigt', pattern: /övrigt(?:\s+hushåll)?|ovrigt(?:\s+hushall)?/i },
+  { label: 'Buffert/sparande', category: 'Buffert', pattern: /buffert|sparande/i },
+];
+function extractVariablePlanItemsFromText(text) {
+  const source = String(text || '').replace(/\u00a0/g, ' ');
+  const found = new Map();
+  for (const alias of variableCategoryAliases) {
+    const categorySource = alias.pattern.source;
+    const before = new RegExp(`(?:${categorySource})[^0-9]{0,30}(?:runt|ca|cirka|på|pa|till)?\\s*(\\d[\\d\\s]*(?:[,.]\\d+)?)\\s*(?:kr|kronor)?`, 'i');
+    const after = new RegExp(`(?:lägg|lagg|sätt|satt|ha)?\\s*(\\d[\\d\\s]*(?:[,.]\\d+)?)\\s*(?:kr|kronor)?\\s*(?:på|pa|till|i)?\\s*(?:${categorySource})`, 'i');
+    const match = source.match(before) || source.match(after);
+    if (!match) continue;
+    const amount = Number(match[1].replace(/\s/g, '').replace(',', '.'));
+    if (Number.isFinite(amount) && amount >= 0 && amount < 100000) found.set(alias.label, { label: alias.label, amount: Math.round(amount), category: alias.category, include: true });
+  }
+  return [...found.values()];
+}
+function recentPlanText(recentMessages) {
+  return Array.isArray(recentMessages) ? recentMessages.slice(-8).map(m => String(m?.content || '')).join('\n') : '';
+}
+
+function makeVariablePlanAction(message, context, recentMessages = []) {
+  const historyText = recentPlanText(recentMessages);
+  const explicitItems = extractVariablePlanItemsFromText(`${message}\n${historyText}`);
+  const isFollowup = variablePlanConfirmationIntent(message) && (variableBudgetIntent(historyText) || explicitItems.length >= 3);
+  if (!variableBudgetIntent(message) && explicitItems.length < 3 && !isFollowup) return null;
   const suggestion = context?.budgetSuggestion;
   const current = Array.isArray(context?.variablePlan) ? context.variablePlan : [];
-  const items = Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current;
+  const items = explicitItems.length >= 3 ? explicitItems : (Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current);
   if (!items.length) return null;
-  return { source: 'local-fallback', message: 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸 Här är ett tydligt förslag — inget ändras förrän du säger ja.', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd ny rörlig budget', description: 'Ersätt den rörliga planen med ett tryggare förslag baserat på hushåll och kvar efter måsten.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), marginLeft: Number(context?.summary?.remainingAfterFixed || 0), mode: 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd budgeten', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
+  return { source: 'local-fallback', message: 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸 Här är ett tydligt förslag — inget ändras förrän du säger ja.', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd ny rörlig plan', description: 'Ersätt den rörliga planen med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: Number(context?.summary?.remainingAfterFixed || 0), marginLeft: Number(suggestion?.marginLeft ?? Math.max(0, Number(context?.summary?.remainingAfterFixed || 0) - items.reduce((sum, item) => sum + Number(item.amount || 0), 0))), mode: 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
 }
-function deterministicActionReply(message, context) {
-  return makeIncomeAction(message, context) || makeVariablePlanAction(message, context);
+function deterministicActionReply(message, context, recentMessages = []) {
+  return makeIncomeAction(message, context) || makeVariablePlanAction(message, context, recentMessages);
 }
 
 function pickStyleVariation() {
@@ -344,7 +380,7 @@ export default async function handler(req, res) {
     const msg = last ? `Jag kollar min action-historik 🛠️ Senast såg jag: ${last.type}${last.reason ? ` — ${last.reason}` : ''}. Jag ändrar inget utan bekräftelse, och om flera inkomster finns behöver jag veta vilken som ska ändras.` : 'Jag kan inte se exakt vad som hände, men jag kan hjälpa dig felsöka steg för steg 🛠️ Om ingen ruta dök upp kan Klirr ha saknat tydlig lön, inkomst eller budgetcontext.';
     return res.status(200).json({ source: 'local-fallback', message: msg, actions: [] });
   }
-  const deterministic = deterministicActionReply(message, context);
+  const deterministic = deterministicActionReply(message, context, conversationMessages);
   if (deterministic?.proposedAction) return res.status(200).json(deterministic);
   if (!process.env.OPENAI_API_KEY) return res.status(200).json(deterministic || fallbackReply(message, context));
 
@@ -384,6 +420,8 @@ export default async function handler(req, res) {
     if (!response.ok) throw new Error(`OpenAI svarade ${response.status}`);
     const data = await response.json();
     const text = data.output_text || data.output?.flatMap(o => o.content || []).map(c => c.text).filter(Boolean).join('\n') || 'Jag fick inte ihop något bra svar just nu 😅';
+    const postProcessedAction = makeVariablePlanAction(`${message}\n${text}`, context, conversationMessages);
+    if (postProcessedAction?.proposedAction) return res.status(200).json({ source: 'openai', message: text, actions: [], proposedAction: postProcessedAction.proposedAction });
     return res.status(200).json({ source: 'openai', message: text, actions: [] });
   } catch (error) {
     return res.status(200).json({ ...fallbackReply(message, context), error: error instanceof Error ? error.message : 'unknown' });
