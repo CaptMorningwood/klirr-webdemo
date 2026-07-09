@@ -145,6 +145,10 @@ export interface ChatMessage {
   proposedAction?: BuddyProposedAction;
 }
 
+export type BuddyActionRiskLevel = 'low' | 'medium' | 'high';
+export interface BuddyActionPreview { before?: Array<{ label: string; amount?: number; note?: string }>; after?: Array<{ label: string; amount?: number; note?: string }>; impact?: Array<{ label: string; value: string | number; tone?: 'good' | 'neutral' | 'warning' | 'danger' }> }
+type BuddyActionShared = { riskLevel?: BuddyActionRiskLevel; preview?: BuddyActionPreview; undoable?: boolean };
+
 export type BuddyProposedAction =
   | {
       id: string;
@@ -163,7 +167,7 @@ export type BuddyProposedAction =
       confirmLabel: string;
       cancelLabel: string;
       status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
-    }
+    } & BuddyActionShared
   | {
       id: string;
       type: 'choose_income_to_update';
@@ -180,7 +184,7 @@ export type BuddyProposedAction =
       confirmLabel?: string;
       cancelLabel: string;
       status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
-    }
+    } & BuddyActionShared
   | {
       id: string;
       type: 'update_variable_plan';
@@ -190,13 +194,18 @@ export type BuddyProposedAction =
         items: Array<{ id?: string; label: string; amount: number; category: string; include: boolean }>;
         availableAfterFixed?: number;
         marginLeft?: number;
-        mode?: 'safe' | 'balanced' | 'free';
+        mode?: 'safe' | 'balanced' | 'free' | 'crisis';
         notes?: string;
       };
       confirmLabel: string;
       cancelLabel: string;
       status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
-    };
+    } & BuddyActionShared
+  | { id: string; type: 'create_rule'; title: string; description: string; payload: { matchText: string; category: string; costType: CostType; note?: string }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
+  | { id: string; type: 'move_recurring_item' | 'reject_recurring_item'; title: string; description: string; payload: { recurringId: string; label: string; from?: CostType; to?: CostType; category?: string }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
+  | { id: string; type: 'fix_duplicate_income'; title: string; description: string; payload: { incomeId: string; label: string; amount?: number; reason?: string }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
+  | { id: string; type: 'create_scenario' | 'apply_scenario_off_ids'; title: string; description: string; payload: { scenarioOffIds: string[]; label?: string; currentMargin?: number; scenarioMargin?: number }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
+  | { id: string; type: 'run_budget_checkup'; title: string; description: string; payload: { issues: Array<{ label: string; severity: 'info' | 'warning' | 'danger'; nextAction?: string }> }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared;
 
 export interface BuddyAction {
   label: string;
@@ -234,11 +243,21 @@ export interface Entitlements {
 export interface BuddyActionHistoryEntry {
   id: string;
   actionId?: string;
-  type: 'proposed' | 'rendered' | 'confirmed' | 'cancelled' | 'applied' | 'failed' | 'no_action_planned' | 'missing_info' | 'needs_user_choice';
+  type: 'proposed' | 'rendered' | 'confirmed' | 'cancelled' | 'applied' | 'undone' | 'failed' | 'no_action_planned' | 'missing_info' | 'needs_user_choice';
   actionType?: string;
   message?: string;
   reason?: string;
   createdAt: string;
+  undoSnapshot?: Partial<Pick<AppState, 'incomes' | 'variablePlan' | 'rules' | 'recurringDecisions' | 'scenarioOff'>>;
+}
+
+export interface BuddySession {
+  currentGoal?: 'increase_margin' | 'make_variable_plan' | 'fix_income' | 'review_musts' | 'find_savings' | 'crisis_budget';
+  preferredStyle?: 'safe' | 'balanced' | 'flexible' | 'crisis';
+  lastProposedActionId?: string;
+  lastRejectedReason?: string;
+  rememberedPriorities?: string[];
+  lastDiscussedPlan?: Array<{ label: string; amount: number; category?: string }>;
 }
 
 export interface AppState {
@@ -254,6 +273,7 @@ export interface AppState {
   scenarioOff: string[];
   chatMessages: ChatMessage[];
   buddyActionHistory?: BuddyActionHistoryEntry[];
+  buddySession?: BuddySession;
   onboardingCompleted: boolean;
   householdProfile?: HouseholdProfile;
   subscriptionPlan?: SubscriptionPlan;
