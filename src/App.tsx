@@ -333,7 +333,8 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
     setBuddyBusy(true);
     try {
       const context = { summary, householdProfile: normalizeHouseholdProfile(state.householdProfile), reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules };
-      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context }) });
+      const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages }) });
       const data = await response.json();
       const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined };
       setState({ ...state, chatMessages: [...afterUser, reply] });
