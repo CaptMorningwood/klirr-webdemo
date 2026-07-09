@@ -161,3 +161,8 @@ tr:last-child td { border-bottom: 0; }
 .section-tabs button:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 .section-tabs button.active { background: linear-gradient(135deg, rgba(124,60,255,.17), rgba(255,79,184,.14)); border-color: rgba(124,60,255,.23); color: var(--accent-text); box-shadow: 0 8px 22px rgba(79,40,164,.08); }
 @media (max-width: 860px) { .section-tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; } .section-tabs button { white-space: nowrap; } }
+.variable-expense-edit-row { grid-template-columns: minmax(72px, auto) minmax(180px, 1fr) 130px 170px 150px auto; }
+.variable-expense-edit-row .pill { justify-content: center; }
+@media (max-width: 900px) {
+  .variable-expense-edit-row { grid-template-columns: 1fr; }
+}
