@@ -175,14 +175,32 @@ function extractGrossSalary(message) {
 }
 function salaryTarget(incomes = []) {
   if (!Array.isArray(incomes) || incomes.length === 0) return { strategy: 'add_new' };
-  if (incomes.length === 1) return { strategy: 'update_single', income: incomes[0] };
-  const salaryWords = ['lön', 'lon', 'salary', 'arbete', 'arbetsgivare', 'månadsinkomst', 'jobb'];
-  const supportWords = ['barnbidrag', 'bidrag', 'csn', 'pension', 'försäkringskassan', 'forsakringskassan', 'sjukpenning', 'föräldrapenning', 'vab'];
+  const salaryWords = ['lön', 'lon', 'salary', 'arbete', 'arbetsgivare', 'månadsinkomst', 'manadsinkomst', 'jobb'];
+  const supportWords = ['barnbidrag', 'bidrag', 'csn', 'pension', 'försäkringskassan', 'forsakringskassan', 'sjukpenning', 'föräldrapenning', 'foraldrapenning', 'vab'];
   const isSalary = income => salaryWords.some(word => String(income.label || '').toLowerCase().includes(word));
   const isSupport = income => supportWords.some(word => String(income.label || '').toLowerCase().includes(word));
-  const candidates = incomes.filter(income => isSalary(income) && !isSupport(income));
+  const nonSupport = incomes.filter(income => !isSupport(income));
+  if (nonSupport.length === 0) return { strategy: 'add_new' };
+  const candidates = nonSupport.filter(isSalary);
   if (candidates.length === 1) return { strategy: 'suggest_existing', income: candidates[0] };
-  return { strategy: 'needs_user_choice', candidates: incomes.filter(income => !isSupport(income)).length ? incomes.filter(income => !isSupport(income)) : incomes };
+  if (candidates.length > 1) return { strategy: 'needs_user_choice', candidates };
+  if (incomes.length === 1 && nonSupport.length === 1) return { strategy: 'update_single', income: nonSupport[0] };
+  return { strategy: 'needs_user_choice', candidates: nonSupport };
+}
+function collectIncomeCandidates(context) {
+  const candidates = [];
+  const seen = new Set();
+  const add = income => {
+    if (!income?.id || !income?.label) return;
+    const key = `${income.id}::${income.label}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ id: String(income.id), label: String(income.label), amount: Number(income.amount || 0), frequency: income.frequency || 'monthly', source: income.source });
+  };
+  (Array.isArray(context?.incomes) ? context.incomes : []).forEach(income => add({ ...income, source: 'manual' }));
+  const summaryItems = Array.isArray(context?.summary?.incomeItems) ? context.summary.incomeItems : Array.isArray(context?.incomeItems) ? context.incomeItems : [];
+  summaryItems.forEach(add);
+  return candidates;
 }
 function makeIncomeAction(message, context) {
   const gross = extractGrossSalary(message);
@@ -190,7 +208,8 @@ function makeIncomeAction(message, context) {
   if (!gross) return null;
   const net = estimateNet(gross);
   if (/(ändra inget|uppdatera inte|bara räkna|vill inte ändra)/i.test(message)) return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 Jag ändrar inget i Klirr.`, actions: [] };
-  const incomes = Array.isArray(context?.incomes) ? context.incomes : [];
+  const manualIncomes = Array.isArray(context?.incomes) ? context.incomes : [];
+  const incomes = collectIncomeCandidates(context);
   const target = salaryTarget(incomes);
   const notes = `Grovt uppskattad från ${gross.toLocaleString('sv-SE')} kr brutto med 32% skatt. Exakt nettolön beror på kommun, skattetabell, ålder och avdrag.`;
   if (target.strategy === 'needs_user_choice') {
@@ -198,9 +217,10 @@ function makeIncomeAction(message, context) {
     return { source: 'local-fallback', message: `${action.description} Jag vill inte råka ändra fel eller skapa en dubblett 💡`, actions: [], proposedAction: action };
   }
   const existing = target.income;
+  if (existing && !manualIncomes.some(income => income.id === existing.id)) return { source: 'local-fallback', message: `Jag hittade “${existing.label}” som trolig lön, men den kommer från importerade bekräftade inkomster. Jag ändrar inte Barnbidrag eller andra stöd som workaround — uppdatera den importerade posten manuellt eller be mig lägga till en ny “Lön efter skatt”.`, actions: [] };
   const replaceMode = target.strategy === 'add_new' ? 'add_new' : 'update_existing';
   const label = existing?.label || 'Lön efter skatt';
-  const action = { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Lägg till “${label}” på cirka ${net.toLocaleString('sv-SE')} kr/mån.` : `Ändra “${label}” från ${Number(existing.amount || 0).toLocaleString('sv-SE')} kr till cirka ${net.toLocaleString('sv-SE')} kr/mån.`, payload: { incomeId: existing?.id, replaceMode, label, amount: net, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' };
+  const action = { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Fält som ändras: Inkomst “${label}”. Lägg till cirka ${net.toLocaleString('sv-SE')} kr/mån.` : `Fält som ändras: Inkomst “${label}”. Ändra från ${Number(existing.amount || 0).toLocaleString('sv-SE')} kr till cirka ${net.toLocaleString('sv-SE')} kr/mån.`, payload: { incomeId: existing?.id, replaceMode, label, amount: net, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' };
   return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 ${replaceMode === 'add_new' ? 'Vill du att jag lägger till den inkomsten?' : `Vill du att jag uppdaterar “${label}” till det?`}`, actions: [], proposedAction: action };
 }
 function makeVariablePlanAction(message, context) {

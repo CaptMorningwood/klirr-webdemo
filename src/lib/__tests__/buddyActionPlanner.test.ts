@@ -37,6 +37,28 @@ describe('buddyActionPlanner salary actions', () => {
     if (action?.type === 'update_income') expect(action.payload.incomeId).toBe('salary');
   });
 
+
+  it('does not update a single support-like income for salary changes', () => {
+    const action = salaryPlan([{ id: 'child', label: 'Barnbidrag', amount: 2650, frequency: 'monthly' }]).proposedAction;
+    expect(action?.type).toBe('update_income');
+    if (action?.type === 'update_income') {
+      expect(action.payload.replaceMode).toBe('add_new');
+      expect(action.payload.incomeId).toBeUndefined();
+      expect(action.payload.label).toBe('Lön efter skatt');
+    }
+  });
+
+  it('considers imported confirmed salary income instead of updating manual Barnbidrag', () => {
+    const plan = planBuddyAction({
+      message: 'min nya lön är 60000',
+      incomes: [{ id: 'child', label: 'Barnbidrag', amount: 2650, frequency: 'monthly' }],
+      context: { summary: { remainingAfterFixed: 10000, incomeItems: [{ id: 'child', label: 'Barnbidrag', amount: 2650, category: 'Inkomst', source: 'manual', frequency: 'monthly' }, { id: 'rec_salary', label: 'Lön Exempelbolaget', amount: 32000, category: 'Inkomst', source: 'recurring', frequency: 'monthly' }] } },
+    });
+    expect(plan.proposedAction).toBeUndefined();
+    expect(plan.clarificationQuestion).toMatch(/Lön Exempelbolaget|importerade/i);
+    expect(plan.explanationHints?.join(' ')).toMatch(/stödinkomster används aldrig/i);
+  });
+
   it('requires choice for ambiguous multiple incomes', () => {
     const action = salaryPlan([{ id: 'a', label: 'Alex', amount: 30000, frequency: 'monthly' }, { id: 'r', label: 'Rebeca', amount: 31000, frequency: 'monthly' }, { id: 'b', label: 'Barnbidrag', amount: 2650, frequency: 'monthly' }]).proposedAction;
     expect(action?.type).toBe('choose_income_to_update');

@@ -18,7 +18,7 @@ describe('budgetSuggestionEngine', () => {
     expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.12);
     expect(food).toBeLessThanOrEqual(available * 0.65);
     expect(food).toBeLessThan(10000);
-    expect(amount(result, 'Nöje')).toBeGreaterThanOrEqual(0);
+    expect(amount(result, 'Nöje')).toBeGreaterThan(0);
     expect(result.guidelineComparison.food.status).toBe('below');
     expect(result.explanationNotes.join(' ')).toMatch(/tajt kassaflödesläge|prioriterar kassaflöde/i);
   });
@@ -31,8 +31,16 @@ describe('budgetSuggestionEngine', () => {
     expect(food).toBeLessThanOrEqual(available * 0.65);
     expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.08);
     expect(result.safetyTotal).toBeGreaterThanOrEqual(available * 0.12);
+    expect(amount(result, 'Nöje')).toBeGreaterThan(0);
     expect(result.items.reduce((sum, item) => sum + item.amount, 0) + result.marginLeft).toBeLessThanOrEqual(available);
     expect(result.explanationNotes.join(' ')).toMatch(/tajt|granskas manuellt|behöver granskas/i);
+  });
+
+  it('allows zero fun only for emergency-level available and explains the crisis budget', () => {
+    const result = suggestVariableBudget({ available: 3000, mode: 'safe', householdProfile: realisticFamilyProfile });
+
+    expect(amount(result, 'Nöje')).toBe(0);
+    expect(result.explanationNotes.join(' ')).toMatch(/kris|tillfällig|Emergency|emergency/i);
   });
 
   it('keeps 25000 kr safe family categories near references and sends leftover to safety', () => {

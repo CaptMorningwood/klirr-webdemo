@@ -55,6 +55,31 @@ function variableBudgetIntent(message: string) {
   return /(tryggare|försiktig|forsiktig|rörlig budget|rörliga budget|budgetförslag|budgetforslag|föreslå.*budget|foresla.*budget|gör budgeten|gor budgeten|dra ner|minska .*budget|lägg mer på|lagg mer pa|använd trygg budget|anvand trygg budget)/i.test(message.toLowerCase());
 }
 
+function incomeKey(income: Pick<Income, 'id' | 'label'>) {
+  return `${income.id}::${income.label}`;
+}
+
+function collectIncomeCandidates(inputIncomes: Income[] = [], context?: any): Income[] {
+  const seen = new Set<string>();
+  const add = (income: Income, out: Income[]) => {
+    const key = incomeKey(income);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(income);
+    }
+  };
+  const candidates: Income[] = [];
+  inputIncomes.forEach(income => add(income, candidates));
+  const summaryItems = context?.summary?.incomeItems || context?.incomeItems || [];
+  if (Array.isArray(summaryItems)) {
+    summaryItems.forEach((item: any) => {
+      if (!item?.id || !item?.label) return;
+      add({ id: String(item.id), label: String(item.label), amount: Number(item.amount || 0), frequency: item.frequency || 'monthly', notes: item.source === 'recurring' ? 'imported_confirmed' : undefined }, candidates);
+    });
+  }
+  return candidates;
+}
+
 function makeIncomeAction(message: string, incomes: Income[], context?: any): BuddyActionPlan {
   const gross = extractGrossSalary(message);
   if (!gross) {
@@ -65,11 +90,12 @@ function makeIncomeAction(message: string, incomes: Income[], context?: any): Bu
     return { intent: 'salary_estimate_update_income', confidence: 'high', explanationHints: [`${formatKr(gross)} brutto blir ungefär ${formatKr(estimate.netMonthly)} efter skatt med 32% antagande.`, 'Användaren ville inte ändra något.'] };
   }
 
-  const targeting = selectIncomeTargetForSalaryUpdate(incomes, message);
+  const allIncomeCandidates = collectIncomeCandidates(incomes, context);
+  const targeting = selectIncomeTargetForSalaryUpdate(allIncomeCandidates, message);
   const notes = `Grovt uppskattad från ${formatKr(gross)} brutto med ${(estimate.taxRate * 100).toLocaleString('sv-SE', { maximumFractionDigits: 1 })}% skatt. Exakt nettolön beror på kommun, skattetabell, ålder och avdrag.`;
 
   if (targeting.strategy === 'needs_user_choice') {
-    const candidates = (targeting.candidateIncomes || incomes).map(income => ({ incomeId: income.id, label: income.label, amount: income.amount }));
+    const candidates = (targeting.candidateIncomes || allIncomeCandidates).map(income => ({ incomeId: income.id, label: income.label, amount: income.amount }));
     return {
       intent: 'income_disambiguation_needed',
       confidence: 'high',
@@ -79,13 +105,23 @@ function makeIncomeAction(message: string, incomes: Income[], context?: any): Bu
     };
   }
 
-  const existing = targeting.incomeId ? incomes.find(income => income.id === targeting.incomeId) : undefined;
+  const existing = targeting.incomeId ? allIncomeCandidates.find(income => income.id === targeting.incomeId) : undefined;
+  const existingIsManual = !!(existing && incomes.some(income => income.id === existing.id));
+  if (existing && !existingIsManual) {
+    return {
+      intent: 'income_disambiguation_needed',
+      confidence: 'high',
+      clarificationQuestion: `Jag hittade “${existing.label}” som trolig lön, men den kommer från importerade bekräftade inkomster. Uppdatera den importerade posten manuellt eller be mig lägga till en ny “Lön efter skatt” i stället.`,
+      explanationHints: [targeting.reason, 'Importerade bekräftade inkomster ändras inte via update_income, och stödinkomster används aldrig som workaround.'],
+    };
+  }
+
   const replaceMode = targeting.strategy === 'add_new' ? 'add_new' : 'update_existing';
   const label = existing?.label || 'Lön efter skatt';
   return {
     intent: 'salary_estimate_update_income',
     confidence: 'high',
-    proposedAction: { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Lägg till “${label}” på cirka ${formatKr(estimate.netMonthly)}/mån.` : `Ändra “${label}” från ${formatKr(existing?.amount || 0)} till cirka ${formatKr(estimate.netMonthly)}/mån.`, payload: { incomeId: targeting.incomeId, replaceMode, label, amount: estimate.netMonthly, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' },
+    proposedAction: { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Fält som ändras: Inkomst “${label}”. Lägg till cirka ${formatKr(estimate.netMonthly)}/mån.` : `Fält som ändras: Inkomst “${label}”. Ändra från ${formatKr(existing?.amount || 0)} till cirka ${formatKr(estimate.netMonthly)}/mån.`, payload: { incomeId: targeting.incomeId, replaceMode, label, amount: estimate.netMonthly, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' },
     explanationHints: [targeting.reason, notes],
   };
 }

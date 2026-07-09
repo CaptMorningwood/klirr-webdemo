@@ -28,17 +28,22 @@ export function isSupportLikeIncome(income: Income) {
 
 export function selectIncomeTargetForSalaryUpdate(incomes: Income[] = [], _message = ''): IncomeTargetResult {
   if (incomes.length === 0) return { strategy: 'add_new', reason: 'Det finns ingen inkomst ännu, så ny nettolön kan läggas till.' };
-  if (incomes.length === 1) return { strategy: 'update_single', incomeId: incomes[0].id, candidateIncomes: incomes, reason: 'Det finns exakt en inkomst, så den kan uppdateras utan dubblett.' };
 
-  const salaryCandidates = incomes.filter(income => isSalaryLikeIncome(income) && !isSupportLikeIncome(income));
+  const nonSupport = incomes.filter(income => !isSupportLikeIncome(income));
+  if (nonSupport.length === 0) {
+    return { strategy: 'add_new', reason: 'De inkomster som finns ser ut som bidrag/stöd och ska inte ändras vid löneuppdatering.' };
+  }
+
+  const salaryCandidates = nonSupport.filter(income => isSalaryLikeIncome(income));
   if (salaryCandidates.length === 1) {
     return { strategy: 'suggest_existing', incomeId: salaryCandidates[0].id, candidateIncomes: salaryCandidates, reason: `Hittade en tydlig lönepost: ${salaryCandidates[0].label}.` };
   }
 
-  const nonSupport = incomes.filter(income => !isSupportLikeIncome(income));
+  if (incomes.length === 1 && nonSupport.length === 1) return { strategy: 'update_single', incomeId: nonSupport[0].id, candidateIncomes: nonSupport, reason: 'Det finns exakt en icke-stödinkomst, så den kan uppdateras utan dubblett.' };
+
   return {
     strategy: 'needs_user_choice',
-    candidateIncomes: nonSupport.length ? nonSupport : incomes,
+    candidateIncomes: nonSupport,
     reason: salaryCandidates.length > 1 ? 'Flera inkomster liknar lön, så användaren behöver välja.' : 'Flera inkomster finns och ingen är en entydig lönepost.',
   };
 }
