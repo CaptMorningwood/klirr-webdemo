@@ -150,6 +150,18 @@ export interface HouseholdProfile {
   transportNeed?: TransportNeed;
 }
 
+export type SubscriptionPlan = 'free' | 'pro';
+export type SubscriptionStatus = 'inactive' | 'active' | 'trialing' | 'past_due';
+
+export interface Entitlements {
+  csvImport: boolean;
+  recurringDetection: boolean;
+  budgetBuddy: boolean;
+  scenarios: boolean;
+  export: boolean;
+  cloudSync: boolean;
+}
+
 export interface AppState {
   accounts: Account[];
   transactions: Transaction[];
@@ -162,6 +174,9 @@ export interface AppState {
   scenarioOff: string[];
   chatMessages: ChatMessage[];
   householdProfile?: HouseholdProfile;
+  subscriptionPlan?: SubscriptionPlan;
+  subscriptionStatus?: SubscriptionStatus;
+  entitlements?: Entitlements;
 }
 
 export interface DetectionResult {
