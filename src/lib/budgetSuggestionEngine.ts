@@ -201,7 +201,8 @@ export function suggestVariableBudget(input: {
   }
 
   let spendableForCategories = Math.max(0, available - reservedMargin - reservedSavings);
-  const tightCashflow = emergencyMode || spendableForCategories < foodReference + transportMin + householdMin + caps.Nöje.recommendedMin;
+  const safeFunFloor = input.mode === 'safe' && !emergencyMode && available > 8000 ? (available >= 12000 ? 500 : 300) : 0;
+  const tightCashflow = emergencyMode || spendableForCategories < foodReference + transportMin + householdMin + Math.max(caps.Nöje.recommendedMin, safeFunFloor);
   const foodReferenceTarget = tightCashflow ? foodReference * 0.78 : foodReference * config.foodFactor;
   const foodCap = emergencyMode ? emergencyFoodCap : foodNormalCap;
   const foodTarget = floor100(Math.min(foodReferenceTarget, foodCap));
@@ -209,7 +210,7 @@ export function suggestVariableBudget(input: {
   const amounts = [
     foodTarget,
     tightCashflow ? transportMin : caps['Transport rörligt'].recommendedTarget,
-    tightCashflow ? (spendableForCategories >= minimumCategoryNeed + 600 ? 300 : 0) : caps.Nöje.recommendedTarget,
+    tightCashflow ? Math.max(safeFunFloor, spendableForCategories >= minimumCategoryNeed + 600 ? 300 : 0) : Math.max(caps.Nöje.recommendedTarget, safeFunFloor),
     tightCashflow ? householdMin : caps['Övrigt hushåll'].recommendedTarget,
     reservedSavings,
   ];
@@ -218,7 +219,7 @@ export function suggestVariableBudget(input: {
   let plannedCategories = amounts[0] + amounts[1] + amounts[2] + amounts[3];
   if (plannedCategories > spendableForCategories) {
     let need = plannedCategories - spendableForCategories;
-    let reduced = reduceAmount(amounts[2], 0, need);
+    let reduced = reduceAmount(amounts[2], safeFunFloor, need);
     amounts[2] = reduced.next;
     need = reduced.remainingNeed;
     reduced = reduceAmount(amounts[3], emergencyMode ? 0 : householdMin, need);
@@ -238,6 +239,11 @@ export function suggestVariableBudget(input: {
       need = reduced.remainingNeed;
       reduced = reduceAmount(marginLeft, emergencyMode && available < minimumCategoryNeed ? 0 : Math.min(marginLeft, 100), need);
       marginLeft = reduced.next;
+      need = reduced.remainingNeed;
+      if (need > 0 && emergencyMode) {
+        reduced = reduceAmount(amounts[2], 0, need);
+        amounts[2] = reduced.next;
+      }
     }
   }
 
@@ -266,7 +272,9 @@ export function suggestVariableBudget(input: {
   const tightNote = tightCashflow || safetyReduced || foodBelowReference
     ? 'Det här är ett tajt kassaflödesläge, inte en långsiktigt trygg budget. Klirr prioriterar kassaflöde och håller nere vardagskategorier för att lämna marginal och planen behöver granskas manuellt. '
     : '';
-  const emergencyNote = emergencyMode ? 'Emergency food-first-läge: tillgängligt belopp räcker knappt till miniminivåer, så säkerhetsdelen har sänkts men inte nollats om det finns utrymme. ' : '';
-  const note = `${preset.label}: ${tightNote}${emergencyNote}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser matvaror, hygien och annan löpande förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
+  const funAmountForNote = items.find(item => item.label === 'Nöje')?.amount || 0;
+  const emergencyNote = emergencyMode ? 'Kris/tillfällig food-first-budget: tillgängligt belopp räcker knappt till miniminivåer, så säkerhetsdelen har sänkts men inte nollats om det finns utrymme. ' : '';
+  const zeroFunNote = funAmountForNote === 0 ? 'Nöje är 0 kr bara för att detta är en kris/tillfällig budget, inte en normal Trygg budget. ' : '';
+  const note = `${preset.label}: ${tightNote}${emergencyNote}${zeroFunNote}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser matvaror, hygien och annan löpande förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
   return { marginLeft, buffer: marginLeft, safetyTotal, note, categoryCaps: caps, clampedCategories, overflowToSafety, guidelineComparison, explanationNotes: [note, guidelineComparison.food.note, 'Siffrorna är deterministiskt beräknade i Klirr och OpenAI får bara formulera texten.'], items };
 }
