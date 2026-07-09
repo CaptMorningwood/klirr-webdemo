@@ -122,6 +122,9 @@ export interface RecurringDecision {
   costType?: 'fixed' | 'variable' | 'income';
   category?: string;
   monthlyAmountOverride?: number;
+  labelOverride?: string;
+  frequencyOverride?: Frequency;
+  note?: string;
 }
 
 export interface TransferDecision {
