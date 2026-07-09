@@ -122,6 +122,12 @@ export default function App() {
   const detection = useMemo(() => detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions), [state.transactions, state.accounts, state.rules, state.transferDecisions]);
   const summary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan]);
   const scenarioSummary = useMemo(() => calculateBudget({ detection, recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, scenarioOff: state.scenarioOff }), [detection, state.recurringDecisions, state.incomes, state.manualExpenses, state.variablePlan, state.scenarioOff]);
+  const hasAnyBudgetData =
+    state.transactions.length > 0 ||
+    state.incomes.length > 0 ||
+    state.manualExpenses.length > 0 ||
+    state.variablePlan.some(item => item.amount > 0 && item.include) ||
+    Object.keys(state.recurringDecisions).length > 0;
 
   const setPartial = (patch: Partial<AppState>) => setState(prev => ({ ...prev, ...patch }));
   const badges: Partial<Record<TabId, number>> = {
@@ -196,7 +202,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={state.transactions.length > 0} onExport={() => exportBudgetReport(summary, detection)} />}
+        {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
         {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
         {tab === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
         {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} summary={summary} />}
@@ -227,8 +233,8 @@ export default function App() {
 
 function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport }: { summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onExport: () => void }) {
   if (!hasData) {
-    return <><PageTitle title="Välkommen till Klirr" subtitle="Importera bankdata eller ladda demo för att se vad livet kostar varje månad." />
-      <Card><div className="stack"><p>Klirr hjälper dig hitta återkommande kostnader, separera interna överföringar och bygga en framåtblickande månadsplan.</p><div className="row"><button className="btn primary" onClick={loadDemo}>✨ Ladda demo</button><button className="btn" onClick={() => setTab('import')}>Importera CSV</button></div></div></Card></>;
+    return <><PageTitle title="Välkommen till Klirr" subtitle="Importera bankdata, ladda demo eller börja manuellt med inkomster och måsten." />
+      <Card><div className="stack"><p>Klirr hjälper dig förstå vad livet kostar varje månad. Du kan börja snabbt genom att lägga in inkomster och måsten manuellt, eller importera ett kontoutdrag för smartare analys.</p><div className="row"><button className="btn primary" onClick={loadDemo}>✨ Ladda demo</button><button className="btn" onClick={() => setTab('import')}>Importera CSV</button><button className="btn" onClick={() => setTab('income')}>Lägg in inkomst</button><button className="btn" onClick={() => setTab('musts')}>Lägg in måsten</button></div></div></Card></>;
   }
   const fixedPct = summary.totalIncome > 0 ? (summary.fixedTotal / summary.totalIncome) * 100 : 0;
   return <>
