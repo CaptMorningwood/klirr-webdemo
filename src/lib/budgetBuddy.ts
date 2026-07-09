@@ -1,10 +1,17 @@
 import type { BuddyAction, BudgetSummary, ChatMessage, DetectionResult, Rule } from '../types';
 import { fmt, fmtSigned, todayIso, uid } from './format';
+import { getActionableRecurringCandidates } from './recurrenceEngine';
 
 export interface BuddyContext {
   summary: BudgetSummary;
   detection: DetectionResult;
   rules: Rule[];
+  transactionCount?: number;
+  recurringCandidateCount?: number;
+  actionableIncomeCandidateCount?: number;
+  actionableExpenseCandidateCount?: number;
+  confirmedRecurringCount?: number;
+  unconfirmedRecurringCount?: number;
 }
 
 export function initialBuddyMessage(): ChatMessage {
@@ -24,6 +31,10 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
   const q = question.toLowerCase();
   const s = ctx.summary;
   const drivers = topDrivers(s);
+  const actionable = getActionableRecurringCandidates(ctx.detection.recurring);
+  const incomeCandidates = ctx.actionableIncomeCandidateCount ?? actionable.filter(r => r.costTypeDefault === 'income').length;
+  const expenseCandidates = ctx.actionableExpenseCandidateCount ?? actionable.filter(r => r.costTypeDefault !== 'income').length;
+  const unconfirmedCandidates = ctx.unconfirmedRecurringCount ?? actionable.length;
   let content = '';
   const actions: BuddyAction[] = [];
 
@@ -46,9 +57,14 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
     const removable = s.variableItems.filter(x => x.source === 'variablePlan').map(x => x.id);
     content = `Krisläge betyder att vi bara räknar måsten och kapar rörlig plan tillfälligt.\n\nMed dagens siffror:\n• Måsten: ${fmt(s.fixedTotal)}\n• Kvar efter måsten: ${fmtSigned(s.remainingAfterFixed)}\n\nDet är inte ett långsiktigt liv, men det visar miniminivån för att klara månaden.`;
     actions.push({ label: 'Testa kris-scenario', tab: 'scenarios', scenarioOffIds: removable });
-  } else if (q.includes('import') || q.includes('kontoutdrag') || q.includes('csv')) {
-    content = 'Ladda upp kontoutdrag under Importera. När du har importerat flera konton ska du markera vilka som är dina egna. Då kan Klirr räkna överföringar mellan dina egna konton som interna, inte som inkomst eller utgift.';
-    actions.push({ label: 'Gå till import', tab: 'import' }, { label: 'Visa konton', tab: 'accounts' }, { label: 'Visa interna överföringar', tab: 'transfers' });
+  } else if (q.includes('import') || q.includes('kontoutdrag') || q.includes('csv') || q.includes('syns inte') || q.includes('räknas inte') || q.includes('händer inget')) {
+    if ((ctx.transactionCount || ctx.detection.recurring.length) && unconfirmedCandidates > 0) {
+      content = `Jag ser att transaktionerna är importerade, men ${unconfirmedCandidates} möjliga inkomster/måsten är inte bekräftade än 💡\n\nKlirr hittade ${incomeCandidates} möjliga inkomster och ${expenseCandidates} möjliga måsten/återkommande utgifter. De räknas inte automatiskt in i Översikt eller Månadens måsten förrän du bekräftar dem, så budgeten fortsätter vara framåtblickande.\n\nGå till Import & granskning → Återkommande och bekräfta lön, hyra, el, Telia eller andra poster som ska gälla framåt.`;
+      actions.push({ label: 'Granska återkommande', tab: 'recurring' }, { label: 'Visa oklara poster', tab: 'review' });
+    } else {
+      content = 'Ladda upp kontoutdrag under Importera. När du har importerat flera konton ska du markera vilka som är dina egna. Då kan Klirr räkna överföringar mellan dina egna konton som interna, inte som inkomst eller utgift.';
+      actions.push({ label: 'Gå till import', tab: 'import' }, { label: 'Visa konton', tab: 'accounts' }, { label: 'Visa interna överföringar', tab: 'transfers' });
+    }
   } else if (q.includes('regel') || q.includes('kategori')) {
     content = 'Regler är Klirrs sätt att komma ihåg dina beslut. Om du säger “Telia = streaming” eller “Matboden = mat” ska den regeln gå före automatisk gissning nästa gång.';
     actions.push({ label: 'Gå till regler', tab: 'rules' });
