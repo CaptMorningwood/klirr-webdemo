@@ -1,8 +1,8 @@
-import type { BuddyProposedAction, HouseholdProfile, Income, VariablePlanItem } from '../types';
+import type { BuddyProposedAction, HouseholdProfile, Income, TabId, VariablePlanItem } from '../types';
 import { uid } from './format';
 import { estimateSwedishNetSalary } from './taxEstimate';
 import { selectIncomeTargetForSalaryUpdate } from './incomeTargeting';
-import { suggestVariableBudget } from './budgetSuggestionEngine';
+import { getFoodReferenceAmount, suggestVariableBudget } from './budgetSuggestionEngine';
 
 export type BuddyActionPlanIntent = 'salary_estimate_update_income' | 'update_variable_budget' | 'create_rule' | 'move_recurring_item' | 'reject_recurring_item' | 'fix_duplicate_income' | 'create_scenario' | 'run_budget_checkup' | 'income_disambiguation_needed' | 'troubleshooting' | 'none';
 export type BuddyActionPlanConfidence = 'high' | 'medium' | 'low';
@@ -243,15 +243,85 @@ function makeScenarioAction(message: string, context: any): BuddyActionPlan | nu
   return { intent: 'create_scenario', confidence: 'medium', proposedAction: { id: uid('buddy_action'), type: 'create_scenario', title: 'Scenario: utan bil', description: 'Visa hur marginalen påverkas om bilposten stängs av i scenario. Inget original ändras.', payload: { scenarioOffIds: [car.id], label: 'utan bil', currentMargin, scenarioMargin }, confirmLabel: 'Visa scenario', cancelLabel: 'Avbryt', status: 'pending', riskLevel: 'low', undoable: true } };
 }
 
+
+export type BudgetCheckupIssue = {
+  label: string;
+  severity: 'info' | 'warning' | 'danger';
+  nextAction?: string;
+  tab?: TabId;
+  message?: string;
+  proposedAction?: BuddyProposedAction;
+};
+
+const severityOrder = { danger: 0, warning: 1, info: 2 } as const;
+
+function variableItemAmount(items: any[] = [], matcher: RegExp) {
+  return items.filter(item => item?.include !== false && matcher.test(String(item?.label || item?.category || ''))).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+}
+
+function supportIncomeLooksHigh(income: any) {
+  const label = String(income?.label || '').toLowerCase();
+  if (!/(barnbidrag|bostadsbidrag|underhåll|underhall|csn|studiebidrag|försäkringskassan|forsakringskassan|a-kassa|akassa|aktivitetsstöd|aktivitetsstod)/i.test(label)) return false;
+  const amount = Number(income?.amount || 0);
+  if (/barnbidrag|studiebidrag/i.test(label)) return amount > 6000;
+  if (/bostadsbidrag|underhåll|underhall/i.test(label)) return amount > 8000;
+  return amount > 14000;
+}
+
+export function buildBudgetCheckupIssues(context: any): BudgetCheckupIssue[] {
+  const summary = context?.summary || {};
+  const totalIncome = Number(summary.totalIncome || context?.totalIncome || 0);
+  const remainingAfterPlan = Number(summary.remainingAfterPlan || 0);
+  const remainingAfterFixed = Number(summary.remainingAfterFixed || 0);
+  const fixedTotal = Number(summary.fixedTotal || 0);
+  const variablePlanTotal = Number(summary.variablePlanTotal || 0);
+  const variablePlan = Array.isArray(context?.variablePlan) ? context.variablePlan : [];
+  const incomeItems = Array.isArray(summary.incomeItems) ? summary.incomeItems : (Array.isArray(context?.incomeItems) ? context.incomeItems : []);
+  const reviewCount = Number(context?.visibleReviewCount ?? context?.reviewCount ?? context?.detection?.reviewItems?.length ?? 0);
+  const handledReviewCount = Number(context?.handledReviewCount || 0);
+  const unresolvedReviewCount = Math.max(0, reviewCount - handledReviewCount);
+  const unconfirmedRecurringCount = Number(context?.unconfirmedRecurringCount || 0);
+  const transferDecisions = context?.transferDecisions || {};
+  const transferMatches = Array.isArray(context?.transfers) ? context.transfers : Array.isArray(context?.detection?.transfers) ? context.detection.transfers : [];
+  const unresolvedTransfers = transferMatches.length ? transferMatches.filter((t: any) => !['confirmed', 'rejected'].includes(transferDecisions[t.id]?.status)).length : Number(context?.transferCandidateCount || 0);
+  const issues: BudgetCheckupIssue[] = [];
+  const add = (issue: BudgetCheckupIssue) => issues.push(issue);
+
+  if ((context?.possibleIncomeDuplicates || []).length) add({ label: 'Möjlig dubbelräkning av lön eller annan inkomst', severity: 'warning', nextAction: 'Låt Buddy föreslå vilken importerad inkomst som ska räknas bort.', message: 'Hjälp mig fixa dubbelräknad lön', proposedAction: makeDuplicateIncomeAction('dubbel lön', context)?.proposedAction });
+  const highSupport = incomeItems.find(supportIncomeLooksHigh);
+  if (highSupport) add({ label: `Stödinkomsten “${highSupport.label}” ser ovanligt hög ut (${formatKr(Number(highSupport.amount || 0))})`, severity: 'warning', nextAction: 'Öppna Inkomst och kontrollera om beloppet är månadsbelopp eller flera månader ihop.', tab: 'income' });
+  if (remainingAfterPlan < 0) add({ label: `Planen går minus med ${formatKr(Math.abs(remainingAfterPlan))}`, severity: 'danger', nextAction: 'Minska rörlig plan eller granska Måsten först.', tab: 'plan', message: 'Gör en tryggare rörlig plan' });
+  else if (totalIncome > 0 && remainingAfterPlan <= Math.max(500, totalIncome * 0.02)) add({ label: `Marginalen efter planen är nära noll (${formatKr(remainingAfterPlan)})`, severity: 'warning', nextAction: 'Lämna lite luft i planen så oväntade köp inte spräcker månaden.', message: 'Gör en tryggare rörlig plan' });
+  if (remainingAfterFixed > 0 && variablePlanTotal >= remainingAfterFixed * 0.98) add({ label: 'Rörlig plan äter upp nästan allt som finns kvar efter Måsten', severity: 'warning', nextAction: 'Be Buddy göra en tryggare plan med buffert och marginal.', message: 'Gör en tryggare rörlig plan' });
+  const fun = variableItemAmount(variablePlan, /nöje|noje/i);
+  const buffer = variableItemAmount(variablePlan, /buffert|sparande/i);
+  const crisis = context?.buddySession?.preferredStyle === 'crisis' || context?.budgetSuggestion?.mode === 'crisis';
+  if (!crisis && variablePlan.length && fun === 0) add({ label: 'Nöje är 0 kr trots att du inte är i krisläge', severity: 'info', nextAction: 'Lägg gärna en liten realistisk nivå så planen går att leva med 💛.', tab: 'variablePlan', message: 'Lägg in lite nöje i min rörliga plan' });
+  if (!crisis && variablePlan.length && buffer === 0) add({ label: 'Buffert/sparande är 0 kr', severity: 'warning', nextAction: 'I trygg/balanserad budget bör en liten buffert prioriteras.', tab: 'variablePlan', message: 'Gör en tryggare rörlig plan med buffert' });
+  const food = variableItemAmount(variablePlan, /mat|livsmedel|hushåll|hushall/i);
+  if (food > 0) {
+    const foodRef = getFoodReferenceAmount(context?.householdProfile);
+    if (food < foodRef * 0.75) add({ label: `Matbudgeten (${formatKr(food)}) är ovanligt låg jämfört med riktvärde (${formatKr(foodRef)})`, severity: 'warning', nextAction: 'Kontrollera att mat inte saknas eller är för tajt.', tab: 'variablePlan' });
+    if (food > foodRef * 1.5) add({ label: `Matbudgeten (${formatKr(food)}) är ovanligt hög jämfört med riktvärde (${formatKr(foodRef)})`, severity: 'info', nextAction: 'Om det är medvetet är det okej, annars kan du sänka lite och flytta till buffert.', tab: 'variablePlan' });
+    if (remainingAfterFixed > 0 && food >= remainingAfterFixed * 0.76) add({ label: 'Mat tar över 75–80% av pengarna som finns kvar efter Måsten', severity: 'warning', nextAction: 'Säkra att även transport, buffert och övrigt får plats.', message: 'Gör en tryggare rörlig plan' });
+  }
+  if (totalIncome > 0 && fixedTotal > totalIncome * 0.8) add({ label: 'Måsten är över 80% av inkomsten', severity: 'danger', nextAction: 'Granska fasta kostnader och inkomster — marginalen är väldigt känslig.', tab: 'musts' });
+  if (unconfirmedRecurringCount > 0) add({ label: `${unconfirmedRecurringCount} återkommande poster är inte bekräftade`, severity: 'info', nextAction: 'Bekräfta det som ska vara med framåt och räkna bort resten.', tab: 'recurring' });
+  if (unresolvedTransfers > 0) add({ label: `${unresolvedTransfers} möjliga interna överföringar behöver beslut`, severity: 'info', nextAction: 'Markera egna överföringar så de inte stör inkomst/utgift.', tab: 'transfers' });
+  if (unresolvedReviewCount >= 8) add({ label: `Många oklara poster (${unresolvedReviewCount} st) väntar på granskning`, severity: 'warning', nextAction: 'Börja med de största beloppen — det ger mest effekt snabbt.', tab: 'review' });
+  else if (unresolvedReviewCount > 0) add({ label: `${unresolvedReviewCount} oklara poster väntar på granskning`, severity: 'info', nextAction: 'Granska dem när du vill finputsa budgeten.', tab: 'review' });
+  if (context?.householdProfileMissing || !context?.householdProfile) add({ label: 'Hushållsprofil saknas', severity: 'info', nextAction: 'Fyll i hushåll så mat och buffertförslag blir mer träffsäkra.', tab: 'household' });
+  if (!variablePlan.length) add({ label: 'Rörlig plan saknas', severity: 'warning', nextAction: 'Skapa en plan för mat, transport, nöje, övrigt och buffert.', message: 'Lägg upp en ny rörlig plan' });
+
+  if (!issues.length) add({ label: 'Inga akuta problem hittade — snyggt jobbat! ✨', severity: 'info', nextAction: 'Fortsätt hålla koll på marginalen och granska nya importer.' });
+  return issues.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+}
+
 function makeCheckupAction(message: string, context: any): BuddyActionPlan | null {
   if (!/(städa min budget|stada min budget|budget checkup|kolla budget|gå igenom budget|ga igenom budget)/i.test(message)) return null;
-  const issues: Array<{ label: string; severity: 'info' | 'warning' | 'danger'; nextAction?: string }> = [];
-  if ((context?.possibleIncomeDuplicates || []).length) issues.push({ label: 'Möjlig dubbelräkning av lön', severity: 'warning', nextAction: 'Välj vilken lön som ska räknas.' });
-  if (Number(context?.summary?.remainingAfterPlan || 0) < 0) issues.push({ label: 'Ingen marginal efter planen', severity: 'danger', nextAction: 'Minska rörlig plan eller granska Måsten.' });
-  if (Number(context?.summary?.fixedTotal || 0) > Number(context?.summary?.totalIncome || 0) * 0.8) issues.push({ label: 'Måsten är över 80% av inkomsten', severity: 'warning', nextAction: 'Gå igenom fasta kostnader.' });
-  if (Number(context?.unconfirmedRecurringCount || 0) > 0) issues.push({ label: 'Oklara återkommande poster finns kvar', severity: 'info', nextAction: 'Granska importerade poster.' });
-  if (!issues.length) issues.push({ label: 'Inga akuta problem hittade', severity: 'info', nextAction: 'Fortsätt hålla koll på marginalen.' });
-  return { intent: 'run_budget_checkup', confidence: 'high', proposedAction: { id: uid('buddy_action'), type: 'run_budget_checkup', title: `Jag hittade ${issues.length} saker att dubbelkolla`, description: 'Checklistan ändrar inget automatiskt — vi går igenom den steg för steg.', payload: { issues }, confirmLabel: 'Gå igenom med mig', cancelLabel: 'Inte nu', status: 'pending', riskLevel: 'low' } };
+  const issues = buildBudgetCheckupIssues(context);
+  const problemCount = issues.filter(issue => issue.label !== 'Inga akuta problem hittade — snyggt jobbat! ✨').length;
+  return { intent: 'run_budget_checkup', confidence: 'high', proposedAction: { id: uid('buddy_action'), type: 'run_budget_checkup', title: problemCount ? `Jag hittade ${problemCount} saker att dubbelkolla ✨` : 'Budgeten ser frisk ut ✨', description: 'Jag städar varsamt: checklistan ändrar inget automatiskt, utan visar vad vi kan titta på steg för steg.', payload: { issues }, confirmLabel: 'Gå igenom med mig', cancelLabel: 'Inte nu', status: 'pending', riskLevel: 'low' } };
 }
 
 function makeVariablePlanAction(input: BuddyActionPlannerInput): BuddyActionPlan {

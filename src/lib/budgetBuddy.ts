@@ -87,6 +87,7 @@ Just nu är din totala månadsplan ${fmt(s.totalMonthlyPlan)} och marginalen eft
 }
 
 export const buddySuggestions = [
+  'Städa min budget ✨',
   'Vad ska jag göra först?',
   'Förklara min ekonomi',
   'Vad kan jag kapa?',

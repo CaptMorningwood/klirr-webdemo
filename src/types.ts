@@ -205,7 +205,7 @@ export type BuddyProposedAction =
   | { id: string; type: 'move_recurring_item' | 'reject_recurring_item'; title: string; description: string; payload: { recurringId: string; label: string; from?: CostType; to?: CostType; category?: string }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
   | { id: string; type: 'fix_duplicate_income'; title: string; description: string; payload: { incomeId: string; label: string; amount?: number; reason?: string }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
   | { id: string; type: 'create_scenario' | 'apply_scenario_off_ids'; title: string; description: string; payload: { scenarioOffIds: string[]; label?: string; currentMargin?: number; scenarioMargin?: number }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared
-  | { id: string; type: 'run_budget_checkup'; title: string; description: string; payload: { issues: Array<{ label: string; severity: 'info' | 'warning' | 'danger'; nextAction?: string }> }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared;
+  | { id: string; type: 'run_budget_checkup'; title: string; description: string; payload: { issues: Array<{ label: string; severity: 'info' | 'warning' | 'danger'; nextAction?: string; tab?: TabId; message?: string; proposedAction?: BuddyProposedAction }> }; confirmLabel: string; cancelLabel: string; status: 'pending' | 'confirmed' | 'cancelled' | 'applied' } & BuddyActionShared;
 
 export interface BuddyAction {
   label: string;
