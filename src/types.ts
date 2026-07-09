@@ -50,6 +50,7 @@ export interface Income {
   label: string;
   amount: number;
   frequency: Frequency;
+  notes?: string;
 }
 
 export interface ManualExpense {
@@ -138,6 +139,7 @@ export type BuddyProposedAction =
       description: string;
       payload: {
         incomeId?: string;
+        replaceMode?: 'add_new' | 'update_existing';
         label: string;
         amount: number;
         frequency: 'monthly';
@@ -145,6 +147,23 @@ export type BuddyProposedAction =
         notes?: string;
       };
       confirmLabel: string;
+      cancelLabel: string;
+      status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
+    }
+  | {
+      id: string;
+      type: 'choose_income_to_update';
+      title: string;
+      description: string;
+      payload: {
+        suggestedAmount: number;
+        suggestedLabel: string;
+        grossMonthly?: number;
+        estimatedNetMonthly?: number;
+        candidateIncomes: Array<{ incomeId: string; label: string; amount: number }>;
+        notes?: string;
+      };
+      confirmLabel?: string;
       cancelLabel: string;
       status: 'pending' | 'confirmed' | 'cancelled' | 'applied';
     }
@@ -197,6 +216,16 @@ export interface Entitlements {
   cloudSync: boolean;
 }
 
+export interface BuddyActionHistoryEntry {
+  id: string;
+  actionId?: string;
+  type: 'proposed' | 'rendered' | 'confirmed' | 'cancelled' | 'applied' | 'failed' | 'no_action_planned' | 'missing_info' | 'needs_user_choice';
+  actionType?: string;
+  message?: string;
+  reason?: string;
+  createdAt: string;
+}
+
 export interface AppState {
   accounts: Account[];
   transactions: Transaction[];
@@ -208,6 +237,7 @@ export interface AppState {
   transferDecisions: Record<string, TransferDecision>;
   scenarioOff: string[];
   chatMessages: ChatMessage[];
+  buddyActionHistory?: BuddyActionHistoryEntry[];
   onboardingCompleted: boolean;
   householdProfile?: HouseholdProfile;
   subscriptionPlan?: SubscriptionPlan;

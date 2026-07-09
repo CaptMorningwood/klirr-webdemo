@@ -11,9 +11,10 @@ import { categorize } from './lib/rulesEngine';
 import { detectRecurring } from './lib/recurrenceEngine';
 import { getEntitlements } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
-import { applyBuddyAction, findPendingBuddyAction } from './lib/buddyActions';
+import { appendBuddyActionHistory, applyBuddyActionWithResult, findPendingBuddyAction } from './lib/buddyActions';
 import { detectBuddyActionIntent } from './lib/buddyActionIntents';
 import { estimateSwedishNetSalary } from './lib/taxEstimate';
+import { planBuddyAction } from './lib/buddyActionPlanner';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
 
@@ -36,6 +37,7 @@ const initialState: AppState = {
   transferDecisions: {},
   scenarioOff: [],
   chatMessages: [initialBuddyMessage()],
+  buddyActionHistory: [],
   onboardingCompleted: false,
   householdProfile: { ...defaultHouseholdProfile, householdType: 'single' },
   subscriptionPlan: 'pro',
@@ -133,7 +135,7 @@ function reviewTypeLabel(type: string) {
 }
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => loadState() || initialState);
+  const [state, setState] = useState<AppState>(() => ({ ...initialState, ...(loadState() || {}), buddyActionHistory: (loadState() as AppState | null)?.buddyActionHistory || [] }));
   const [tab, setTab] = useState<TabId>('dashboard');
   const [planSection, setPlanSection] = useState<PlanSection>('musts');
   const [importReviewSection, setImportReviewSection] = useState<ImportReviewSection>('import');
@@ -185,6 +187,7 @@ export default function App() {
       variablePlan: demo.variablePlan,
       rules: demo.rules,
       chatMessages: [initialBuddyMessage()],
+      buddyActionHistory: [],
       onboardingCompleted: true,
     });
     selectTab('dashboard');
@@ -285,13 +288,21 @@ function OnboardingView({ initialState, state, setState, loadDemo, setTab }: { i
     setTab(nextTab);
   }
   function skip() { setState({ ...state, onboardingCompleted: true }); setTab('dashboard'); }
-  return <><PageTitle title="Kom igång med Klirr" subtitle="Bygg en första månadsbudget på några minuter — helt utan CSV." />
-    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between' }}><b>Steg {step + 1} av 6</b><button className="btn small" onClick={skip}>Hoppa över</button></div></Card>
-    {step === 0 && <Card><h3>Hur vill du börja?</h3><div className="row"><button className="btn primary" onClick={() => setStep(1)}>Börja manuellt</button><button className="btn" onClick={() => { skip(); setTab('import'); }}>Importera kontoutdrag</button><button className="btn" onClick={loadDemo}>Ladda demo</button></div></Card>}
-    {step === 1 && <Card><h3>Hushåll</h3><div className="grid grid-3"><label>Vuxna<input className="input" type="number" min={1} value={profile.adults} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, adults: Number(e.target.value) }))} /></label><label>Barn<input className="input" type="number" min={0} value={profile.children} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, children: Number(e.target.value) }))} /></label><label>Tonåringar<input className="input" type="number" min={0} value={profile.teens} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, teens: Number(e.target.value) }))} /></label></div><div className="grid grid-2" style={{ marginTop: 12 }}><select className="select" value={profile.foodAmbition} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, foodAmbition: e.target.value as FoodAmbition }))}><option value="budget">Matnivå: budget</option><option value="normal">Matnivå: normal</option><option value="comfortable">Matnivå: bekväm</option></select><select className="select" value={profile.transportNeed} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, transportNeed: e.target.value as TransportNeed }))}><option value="low">Transport: lågt</option><option value="normal">Transport: normalt</option><option value="high">Transport: högt</option></select></div><button className="btn primary" onClick={() => setStep(2)}>Nästa</button></Card>}
-    {step === 2 && <Card><h3>Inkomst</h3><div className="grid grid-2"><input className="input" type="number" placeholder="Månadsinkomst efter skatt" value={netIncome} onChange={e => setNetIncome(e.target.value)} /><input className="input" type="number" placeholder="Eller bruttolön för uppskattning" value={grossIncome} onChange={e => setGrossIncome(e.target.value)} /></div>{estimatedNet > 0 && <p className="hint">Grovt uppskattat efter skatt: <b>{fmt(estimatedNet)}</b> med cirka 32% skatt.</p>}<button className="btn primary" onClick={() => setStep(3)}>Nästa</button></Card>}
-    {step === 3 && <Card><h3>Måsten</h3><div className="stack">{musts.map((item, i) => <div className="edit-row" key={item.label}><input className="input" value={item.label} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, label: e.target.value } : m))} /><input className="input money-input" type="number" placeholder="kr/mån" value={item.amount} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, amount: e.target.value } : m))} /></div>)}</div><button className="btn primary" onClick={() => setStep(4)}>Nästa</button></Card>}
-    {step === 4 && <Card><h3>Rörlig budget</h3><select className="select" value={mode} onChange={e => setMode(e.target.value as BudgetSuggestionMode)}><option value="safe">Trygg</option><option value="balanced">Balanserad</option><option value="boost">Lite friare</option></select><p className="hint">Kvar efter måsten: <b>{fmtSigned(incomeAmount - fixedTotal)}</b>. {suggestion.note}</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}</span><b className="mono">{fmt(item.amount)}</b></div>)}</div><button className="btn primary" onClick={() => setStep(5)}>Nästa</button></Card>}
+  const buddyCopy = [
+    "Hej! Jag är Budget Buddy ✨ Vi bygger din första Klirr-budget tillsammans. Det behöver inte bli perfekt direkt — vi ska bara få en bra start 💸",
+    "Först: vilka ska budgeten räcka till? En ensam person och en barnfamilj behöver ju inte samma matbudget 🍝",
+    "Nu tar vi pengarna in. Lägg in ungefär vad som landar på kontot varje månad. Vet du bara bruttolönen kan jag hjälpa dig uppskatta efter skatt 🧾",
+    "Nu fångar vi sånt som måste betalas. Hyra, lån, försäkringar, el — allt det där som kommer innan vardagsbudgeten 📌",
+    "Nu gör vi vardagsplanen. Jag kan föreslå en trygg, balanserad eller lite friare budget utifrån hushållet och pengarna som finns kvar 💡",
+    "Så! Nu har Klirr något att jobba med 🎉 Du kan alltid ändra senare — budgeten ska hjälpa dig, inte låsa dig."
+  ];
+  return <><PageTitle title="Kom igång med Klirr" subtitle="Budget Buddy guidar dig till en första månadsbudget på några minuter." />
+    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><b>Budget Buddy ✨ · Steg {step + 1} av 6</b><p className="hint" style={{ marginBottom: 0 }}>{buddyCopy[step]}</p></div><button className="btn small" onClick={skip}>Hoppa över</button></div></Card>
+    {step === 0 && <Card><h3>Hur vill du börja? 🙌</h3><div className="row"><button className="btn primary" onClick={() => setStep(1)}>Börja manuellt</button><button className="btn" onClick={() => { skip(); setTab('import'); }}>Importera kontoutdrag</button><button className="btn" onClick={loadDemo}>Ladda demo</button></div></Card>}
+    {step === 1 && <Card><h3>Hushåll 🏠</h3><div className="grid grid-3"><label>Vuxna<input className="input" type="number" min={1} value={profile.adults} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, adults: Number(e.target.value) }))} /></label><label>Barn<input className="input" type="number" min={0} value={profile.children} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, children: Number(e.target.value) }))} /></label><label>Tonåringar<input className="input" type="number" min={0} value={profile.teens} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, teens: Number(e.target.value) }))} /></label></div><div className="grid grid-2" style={{ marginTop: 12 }}><select className="select" value={profile.foodAmbition} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, foodAmbition: e.target.value as FoodAmbition }))}><option value="budget">Matnivå: budget</option><option value="normal">Matnivå: normal</option><option value="comfortable">Matnivå: bekväm</option></select><select className="select" value={profile.transportNeed} onChange={e => setProfile(normalizeHouseholdProfile({ ...profile, transportNeed: e.target.value as TransportNeed }))}><option value="low">Transport: lågt</option><option value="normal">Transport: normalt</option><option value="high">Transport: högt</option></select></div><button className="btn primary" onClick={() => setStep(2)}>Nästa</button></Card>}
+    {step === 2 && <Card><h3>Inkomst 💸</h3><div className="grid grid-2"><input className="input" type="number" placeholder="Månadsinkomst efter skatt" value={netIncome} onChange={e => setNetIncome(e.target.value)} /><input className="input" type="number" placeholder="Eller bruttolön för uppskattning" value={grossIncome} onChange={e => setGrossIncome(e.target.value)} /></div>{estimatedNet > 0 && <p className="hint">Grovt uppskattat efter skatt: <b>{fmt(estimatedNet)}</b> med cirka 32% skatt.</p>}<button className="btn primary" onClick={() => setStep(3)}>Nästa</button></Card>}
+    {step === 3 && <Card><h3>Måsten 📌</h3><div className="stack">{musts.map((item, i) => <div className="edit-row" key={item.label}><input className="input" value={item.label} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, label: e.target.value } : m))} /><input className="input money-input" type="number" placeholder="kr/mån" value={item.amount} onChange={e => setMusts(musts.map((m, idx) => idx === i ? { ...m, amount: e.target.value } : m))} /></div>)}</div><button className="btn primary" onClick={() => setStep(4)}>Nästa</button></Card>}
+    {step === 4 && <Card><h3>Rörlig budget 💡</h3><select className="select" value={mode} onChange={e => setMode(e.target.value as BudgetSuggestionMode)}><option value="safe">Trygg</option><option value="balanced">Balanserad</option><option value="boost">Lite friare</option></select><p className="hint">Kvar efter måsten: <b>{fmtSigned(incomeAmount - fixedTotal)}</b>. {suggestion.note}</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}</span><b className="mono">{fmt(item.amount)}</b></div>)}</div><button className="btn primary" onClick={() => setStep(5)}>Nästa</button></Card>}
     {step === 5 && <Card><h3>Klar ✅</h3><p>Första budgeten är redo: inkomst {fmt(incomeAmount)}, måsten {fmt(fixedTotal)} och rörlig plan {fmt(suggestion.items.reduce((sum, item) => sum + item.amount, 0))}.</p><div className="row"><button className="btn primary" onClick={() => finish('dashboard')}>Gå till Översikt</button><button className="btn" onClick={() => finish('buddy')}>Prata med Budget Buddy</button></div></Card>}
   </>;
 }
@@ -375,9 +386,12 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
     return { ...baseState, chatMessages: baseState.chatMessages.map(m => m.proposedAction?.id === actionId ? { ...m, proposedAction: { ...m.proposedAction, status } as BuddyProposedAction } : m) };
   }
   function applyOrCancel(action: BuddyProposedAction, intent: 'confirm' | 'cancel', baseState = state) {
-    const nextBase = intent === 'confirm' ? applyBuddyAction(updateActionStatus(action.id, 'applied', baseState), action) : updateActionStatus(action.id, 'cancelled', baseState);
-    const msg: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: intent === 'confirm' ? action.type === 'update_income' ? `Klart — jag uppdaterade inkomsten till ${fmt(action.payload.amount)}/mån ✅` : 'Klart — jag uppdaterade den rörliga planen ✅' : action.type === 'update_income' ? 'Ingen fara, jag låter inkomsten vara som den är 👍' : 'Ingen fara, jag behåller den rörliga planen som den är 👍' };
-    setState({ ...nextBase, chatMessages: [...nextBase.chatMessages, msg] });
+    const statusState = updateActionStatus(action.id, intent === 'confirm' ? 'applied' : 'cancelled', baseState);
+    const logged = appendBuddyActionHistory(statusState, { actionId: action.id, actionType: action.type, type: intent === 'confirm' ? 'confirmed' : 'cancelled', message: intent === 'confirm' ? 'Användaren bekräftade Budget Buddy-action.' : 'Användaren avbröt Budget Buddy-action.' });
+    const result = intent === 'confirm' ? applyBuddyActionWithResult(logged, action) : { state: logged, status: 'applied' as const, message: action.type === 'update_variable_plan' ? 'Ingen fara, jag behåller den rörliga planen som den är 👍' : 'Ingen fara, jag låter inkomsten vara som den är 👍' };
+    const finalState = intent === 'confirm' ? appendBuddyActionHistory(result.state, { actionId: action.id, actionType: action.type, type: result.status === 'applied' ? 'applied' : result.status === 'needs_choice' ? 'needs_user_choice' : 'failed', reason: result.message }) : result.state;
+    const msg: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: result.message };
+    setState({ ...finalState, chatMessages: [...finalState.chatMessages, msg] });
   }
   async function send(text: string) {
     const trimmed = text.trim();
@@ -396,12 +410,21 @@ function BudgetBuddyView({ state, setState, summary, detection, setTab, setScena
     try {
       const currentDate = new Date().toISOString();
       const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
-      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const context = { summary, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, reviewCount: detection.reviewItems.length, recurringCount: detection.recurring.length, transferCount: detection.transfers.length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
       const data = await response.json();
-      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction: data.proposedAction };
-      setState({ ...state, chatMessages: [...afterUserState.chatMessages, reply] });
+      const proposedAction = data.proposedAction || localPlan.proposedAction;
+      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || 'Jag kunde inte skapa ett svar just nu.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
+      let nextState: AppState = { ...state, chatMessages: [...afterUserState.chatMessages, reply] };
+      if (proposedAction) {
+        nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: proposedAction.type === 'choose_income_to_update' ? 'needs_user_choice' : 'proposed', message: trimmed, reason: localPlan.explanationHints?.join(' ') });
+        nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: 'rendered', message: proposedAction.title });
+      } else if (localPlan.intent !== 'none') {
+        nextState = appendBuddyActionHistory(nextState, { type: localPlan.missingInfo?.length ? 'missing_info' : 'no_action_planned', message: trimmed, reason: localPlan.clarificationQuestion || localPlan.explanationHints?.join(' ') });
+      }
+      setState(nextState);
     } catch {
       const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
       setState({ ...state, chatMessages: [...afterUserState.chatMessages, { ...reply, content: `${reply.content}
@@ -417,13 +440,14 @@ Obs: AI-endpointen kunde inte nås, så detta är lokalt fallback-svar.` }] });
     if (action.message) send(action.message);
   }
   function actionSummary(action: BuddyProposedAction) {
-    if (action.type === 'update_income') return <div className="stack"><div className="list-line"><span>{action.payload.label}</span><b className="mono">{fmt(action.payload.amount)}/mån</b></div>{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
+    if (action.type === 'update_income') return <div className="stack"><div className="list-line"><span>{action.description}</span><b className="mono">{fmt(action.payload.amount)}/mån</b></div>{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
+    if (action.type === 'choose_income_to_update') return <div className="stack">{action.payload.candidateIncomes.map(item => <div className="list-line" key={item.incomeId}><span>{item.label}</span><b className="mono">{fmt(item.amount)}/mån</b></div>)}<p className="hint">Skriv namnet på inkomsten du vill ändra. Jag skapar ingen dubblett automatiskt.</p>{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
     return <div className="stack">{action.payload.items.map(item => <div className="list-line" key={item.id || item.label}><span>{item.label}<br/><small>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}{action.payload.notes && <p className="hint">{action.payload.notes}</p>}</div>;
   }
   return <Card className="chat-shell">
     <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '5px 0 0', color: 'var(--muted)' }}>Din ekonomiska rådgivar-kompis i Klirr. Ändringar visas alltid tydligt och kräver ditt ja.</p></div>
     <div className="chat-messages" ref={scrollRef}>
-      {state.chatMessages.map(m => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel}</button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className="pill">{m.proposedAction.status}</span></div></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
+      {state.chatMessages.map(m => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className="pill">{m.proposedAction.status}</span></div></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div>
       <div className="row" style={{ marginBottom: 10 }}>{buddySuggestions.map(s => <button key={s} className="btn small" onClick={() => send(s)}>{s}</button>)}</div>

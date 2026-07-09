@@ -2,7 +2,7 @@ const safeSystemPrompt = `Du är Budget Buddy i Klirr.
 
 Viktigast av allt: det ska kännas som att användaren chattar med en varm, smart och lite lättsam kompis som hjälper till att reda ut ekonomin. Inte som en bank. Inte som en myndighet. Inte som en stel rådgivare.
 
-Skriv alltid på svenska och skriv vardagligt.
+Skriv alltid på svenska och skriv vardagligt. Budget Buddy ska kännas som en bubblig och peppig budgetkompis: varm, tydlig och gärna lite glad i tonen. Använd emojis ofta, men naturligt. Målet är att användaren ska känna: ‘jag får hjälp av någon som både fattar ekonomi och hejar på mig’. Vid vanliga produkt- och budgetfrågor: våga vara glad, peppig och personlig. Vid ekonomisk stress: var fortfarande varm, men lugnare och mindre sprallig.
 
 Din vibe:
 - varm
@@ -10,6 +10,7 @@ Din vibe:
 - rak utan att vara hård
 - lättsam när det passar
 - tydlig och praktisk
+- glad, peppig, trevlig och bubblig när läget passar
 - lugn när ekonomin känns stressig
 - aldrig dömande
 
@@ -172,21 +173,35 @@ function extractGrossSalary(message) {
   const matches = [...text.matchAll(/(\d[\d\s]{3,})(?:\s*kr)?/g)].map(m => Number(m[1].replace(/\s/g, ''))).filter(n => n >= 10000 && n < 500000);
   return matches[0] || null;
 }
+function salaryTarget(incomes = []) {
+  if (!Array.isArray(incomes) || incomes.length === 0) return { strategy: 'add_new' };
+  if (incomes.length === 1) return { strategy: 'update_single', income: incomes[0] };
+  const salaryWords = ['lön', 'lon', 'salary', 'arbete', 'arbetsgivare', 'månadsinkomst', 'jobb'];
+  const supportWords = ['barnbidrag', 'bidrag', 'csn', 'pension', 'försäkringskassan', 'forsakringskassan', 'sjukpenning', 'föräldrapenning', 'vab'];
+  const isSalary = income => salaryWords.some(word => String(income.label || '').toLowerCase().includes(word));
+  const isSupport = income => supportWords.some(word => String(income.label || '').toLowerCase().includes(word));
+  const candidates = incomes.filter(income => isSalary(income) && !isSupport(income));
+  if (candidates.length === 1) return { strategy: 'suggest_existing', income: candidates[0] };
+  return { strategy: 'needs_user_choice', candidates: incomes.filter(income => !isSupport(income)).length ? incomes.filter(income => !isSupport(income)) : incomes };
+}
 function makeIncomeAction(message, context) {
   const gross = extractGrossSalary(message);
+  if (!gross && /(lön|lon|brutto|efter skatt|netto|inkomst|tjänar|får ut)/i.test(message)) return { source: 'local-fallback', message: 'Vilken bruttolön vill du att jag räknar på? Skriv gärna till exempel “50 000 kr brutto” 🧾', actions: [] };
   if (!gross) return null;
   const net = estimateNet(gross);
-  const action = {
-    id: uid('buddy_action'),
-    type: 'update_income',
-    title: 'Uppdatera inkomst',
-    description: `Sätt månadsinkomst efter skatt till cirka ${net.toLocaleString('sv-SE')} kr.`,
-    payload: { incomeId: Array.isArray(context?.incomes) && context.incomes.length === 1 ? context.incomes[0].id : undefined, label: 'Lön efter skatt', amount: net, frequency: 'monthly', source: 'buddy', notes: `Grovt uppskattad från ${gross.toLocaleString('sv-SE')} kr brutto med 32% skatt.` },
-    confirmLabel: 'Ja, uppdatera min inkomst',
-    cancelLabel: 'Nej, låt den vara',
-    status: 'pending',
-  };
-  return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 Exakt nettolön beror på kommun, skattetabell, ålder och avdrag. Vill du att jag uppdaterar inkomsten i Klirr till det?`, actions: [], proposedAction: action };
+  if (/(ändra inget|uppdatera inte|bara räkna|vill inte ändra)/i.test(message)) return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 Jag ändrar inget i Klirr.`, actions: [] };
+  const incomes = Array.isArray(context?.incomes) ? context.incomes : [];
+  const target = salaryTarget(incomes);
+  const notes = `Grovt uppskattad från ${gross.toLocaleString('sv-SE')} kr brutto med 32% skatt. Exakt nettolön beror på kommun, skattetabell, ålder och avdrag.`;
+  if (target.strategy === 'needs_user_choice') {
+    const action = { id: uid('buddy_action'), type: 'choose_income_to_update', title: 'Välj inkomst att ändra', description: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt. Vilken inkomst ska jag ersätta?`, payload: { suggestedAmount: net, suggestedLabel: 'Lön efter skatt', grossMonthly: gross, estimatedNetMonthly: net, candidateIncomes: target.candidates.map(income => ({ incomeId: income.id, label: income.label, amount: income.amount })), notes }, cancelLabel: 'Nej, låt allt vara', status: 'pending' };
+    return { source: 'local-fallback', message: `${action.description} Jag vill inte råka ändra fel eller skapa en dubblett 💡`, actions: [], proposedAction: action };
+  }
+  const existing = target.income;
+  const replaceMode = target.strategy === 'add_new' ? 'add_new' : 'update_existing';
+  const label = existing?.label || 'Lön efter skatt';
+  const action = { id: uid('buddy_action'), type: 'update_income', title: replaceMode === 'add_new' ? 'Lägg till inkomst' : 'Uppdatera inkomst', description: replaceMode === 'add_new' ? `Lägg till “${label}” på cirka ${net.toLocaleString('sv-SE')} kr/mån.` : `Ändra “${label}” från ${Number(existing.amount || 0).toLocaleString('sv-SE')} kr till cirka ${net.toLocaleString('sv-SE')} kr/mån.`, payload: { incomeId: existing?.id, replaceMode, label, amount: net, frequency: 'monthly', source: 'buddy', notes }, confirmLabel: replaceMode === 'add_new' ? 'Ja, lägg till inkomsten' : `Ja, ändra ${label}`, cancelLabel: 'Nej, låt den vara', status: 'pending' };
+  return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 ${replaceMode === 'add_new' ? 'Vill du att jag lägger till den inkomsten?' : `Vill du att jag uppdaterar “${label}” till det?`}`, actions: [], proposedAction: action };
 }
 function makeVariablePlanAction(message, context) {
   if (!/(tryggare|tajtare|rörlig budget|rörliga budget|budgetförslag|föreslå.*budget|gör budgeten)/i.test(message)) return null;
@@ -304,6 +319,11 @@ export default async function handler(req, res) {
           content: String(m.content).slice(0, 1200),
         }))
     : [];
+  if (/(varför|varfor|hände inget|hande inget|dök ingen|dok ingen|uppdaterades inte|ändrades inte|andrades inte|gjorde du|uppdaterade du)/i.test(message)) {
+    const last = Array.isArray(context?.buddyActionHistory) ? context.buddyActionHistory.at(-1) : null;
+    const msg = last ? `Jag kollar min action-historik 🛠️ Senast såg jag: ${last.type}${last.reason ? ` — ${last.reason}` : ''}. Jag ändrar inget utan bekräftelse, och om flera inkomster finns behöver jag veta vilken som ska ändras.` : 'Jag kan inte se exakt vad som hände, men jag kan hjälpa dig felsöka steg för steg 🛠️ Om ingen ruta dök upp kan Klirr ha saknat tydlig lön, inkomst eller budgetcontext.';
+    return res.status(200).json({ source: 'local-fallback', message: msg, actions: [] });
+  }
   const deterministic = deterministicActionReply(message, context);
   if (deterministic?.proposedAction) return res.status(200).json(deterministic);
   if (!process.env.OPENAI_API_KEY) return res.status(200).json(deterministic || fallbackReply(message, context));
