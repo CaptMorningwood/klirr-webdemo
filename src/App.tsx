@@ -2,17 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Account, AppState, BuddyAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
+import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
 import { buddySuggestions, initialBuddyMessage, makeBuddyReply } from './lib/budgetBuddy';
 import { BANK_FORMATS, type BankKey, detectBank, guessMapping, parseCsvToRows, parseRowsWithMapping, readCsvTable, rowsToTransactions, transactionFingerprint } from './lib/csvParsers';
 import { exportBudgetReport, exportTransactionsCsv } from './lib/exporters';
 import { fmt, fmtSigned, pct, todayIso, uid } from './lib/format';
 import { categorize } from './lib/rulesEngine';
 import { detectRecurring } from './lib/recurrenceEngine';
+import { getEntitlements } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
-
-const defaultHouseholdProfile: HouseholdProfile = { adults: 1, children: 0, teens: 0, foodAmbition: 'normal', transportNeed: 'normal', householdType: 'single' };
 
 const defaultVariablePlan: VariablePlanItem[] = [
   { id: 'vp_food', label: 'Mat och hushåll', amount: 6000, category: 'Vardag', include: true },
@@ -33,7 +33,10 @@ const initialState: AppState = {
   transferDecisions: {},
   scenarioOff: [],
   chatMessages: [initialBuddyMessage()],
-  householdProfile: defaultHouseholdProfile,
+  householdProfile: { ...defaultHouseholdProfile, householdType: 'single' },
+  subscriptionPlan: 'pro',
+  subscriptionStatus: 'active',
+  entitlements: getEntitlements('pro'),
 };
 
 const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
@@ -388,110 +391,6 @@ function MustsView({ summary, state, setState }: { summary: ReturnType<typeof ca
   </>;
 }
 
-type BudgetSuggestionMode = 'safe' | 'balanced' | 'boost';
-
-function normalizeHouseholdProfile(profile?: HouseholdProfile): HouseholdProfile {
-  const adults = Math.max(1, Math.round(Number(profile?.adults || 1)));
-  const children = Math.max(0, Math.round(Number(profile?.children || 0)));
-  const teens = Math.max(0, Math.round(Number(profile?.teens || 0)));
-  const foodAmbition: FoodAmbition = profile?.foodAmbition === 'budget' || profile?.foodAmbition === 'comfortable' ? profile.foodAmbition : 'normal';
-  const transportNeed: TransportNeed = profile?.transportNeed === 'low' || profile?.transportNeed === 'high' ? profile.transportNeed : 'normal';
-  return { ...defaultHouseholdProfile, ...profile, adults, children, teens, foodAmbition, transportNeed };
-}
-
-function householdUnits(profile?: HouseholdProfile) {
-  const p = normalizeHouseholdProfile(profile);
-  return p.adults + p.teens * 0.9 + p.children * 0.6;
-}
-
-function suggestVariableBudget(remainingAfterFixed: number, mode: BudgetSuggestionMode, householdProfile?: HouseholdProfile): { items: VariablePlanItem[]; buffer: number; safetyTotal: number; note: string } {
-  const available = Math.max(0, Math.round(remainingAfterFixed));
-  if (available <= 0) {
-    return {
-      buffer: 0,
-      safetyTotal: 0,
-      note: 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska Måsten och inkomster innan du sätter en rörlig plan.',
-      items: [
-        { id: 'vp_ai_food', label: 'Mat och hushåll', amount: 0, category: 'Vardag', include: true },
-        { id: 'vp_ai_transport', label: 'Transport rörligt', amount: 0, category: 'Transport', include: true },
-        { id: 'vp_ai_fun', label: 'Nöje', amount: 0, category: 'Valfritt', include: true },
-        { id: 'vp_ai_household', label: 'Övrigt hushåll', amount: 0, category: 'Vardag', include: true },
-        { id: 'vp_ai_savings', label: 'Buffert/sparande', amount: 0, category: 'Sparande', include: true },
-      ],
-    };
-  }
-
-  const profile = normalizeHouseholdProfile(householdProfile);
-  const units = Math.max(1, householdUnits(profile));
-  const ambition = { budget: { base: 3000, extra: 1800 }, normal: { base: 4000, extra: 2400 }, comfortable: { base: 5200, extra: 3000 } }[profile.foodAmbition || 'normal'];
-  const foodNeed = ambition.base + Math.max(0, units - 1) * ambition.extra;
-  const householdNeed = 900 + Math.max(0, units - 1) * 450;
-  const transportNeed = profile.transportNeed === 'low' ? 900 : profile.transportNeed === 'high' ? 3000 : 1800;
-  const lowSpace = available < Math.max(6000, foodNeed + householdNeed + transportNeed + 1500);
-  const settings: Record<BudgetSuggestionMode, { label: string; percentages: [number, number, number, number, number, number]; note: string }> = {
-    safe: {
-      label: 'Trygg budget',
-      percentages: lowSpace ? [50, 12, 3, 8, 17, 12] : [45, 12, 6, 10, 17, 10],
-      note: lowSpace
-        ? 'Tryggt förslag: utrymmet är lågt, så nöje hålls extra lågt och trygghetsdelen prioriteras.'
-        : 'Tryggt förslag: mest buffert/sparande och marginal kvar, med låg nöjesdel och försiktig vardag.',
-    },
-    balanced: {
-      label: 'Balanserad budget',
-      percentages: lowSpace ? [48, 12, 6, 9, 15, 8] : [45, 13, 10, 12, 12, 8],
-      note: lowSpace
-        ? 'Balanserat förslag: fortfarande försiktigt eftersom utrymmet är lågt, men med lite mer vardagsutrymme än Trygg budget.'
-        : 'Balanserat förslag: en mellanväg där vardag, nöje, buffert/sparande och marginal får plats.',
-    },
-    boost: {
-      label: 'Lite friare budget',
-      percentages: lowSpace ? [45, 11, 10, 11, 13, 5] : [43, 12, 17, 13, 9, 6],
-      note: lowSpace
-        ? 'Lite friare förslag: ger mest till nöje av lägena, men behåller marginal eftersom utrymmet är lågt.'
-        : 'Lite friare förslag: mer till nöje och övrigt, men med lägst trygghetsdel av lägena.',
-    },
-  };
-  const cfg = settings[mode] || settings.balanced;
-  const labels = [
-    ['Mat och hushåll', 'Vardag'],
-    ['Transport rörligt', 'Transport'],
-    ['Nöje', 'Valfritt'],
-    ['Övrigt hushåll', 'Vardag'],
-    ['Buffert/sparande', 'Sparande'],
-  ] as const;
-  const amounts = cfg.percentages.slice(0, 5).map(percentage => Math.round((available * percentage) / 100 / 100) * 100);
-  const modeFoodFactor = mode === 'safe' ? 0.95 : mode === 'boost' ? 1.05 : 1;
-  const foodCap = Math.round(Math.min(foodNeed * 1.15, available * 0.58) / 100) * 100;
-  const desiredFood = Math.round(Math.min(foodCap, foodNeed * modeFoodFactor) / 100) * 100;
-  amounts[0] = Math.max(amounts[0], desiredFood);
-  amounts[1] = Math.max(amounts[1], Math.round(Math.min(transportNeed, available * 0.22) / 100) * 100);
-  amounts[3] = Math.max(amounts[3], Math.round(Math.min(householdNeed, available * 0.18) / 100) * 100);
-  const targetMargin = Math.round((available * cfg.percentages[5]) / 100 / 100) * 100;
-  const plannedTotal = amounts.reduce((sum, amount) => sum + amount, 0) + targetMargin;
-  if (plannedTotal < available) amounts[0] = Math.max(0, amounts[0] + available - plannedTotal);
-  while (amounts.reduce((sum, amount) => sum + amount, 0) + targetMargin > available) {
-    const reducibleOrder = [2, 4, 3, 1, 0];
-    let changed = false;
-    for (const idx of reducibleOrder) {
-      const floor = idx === 0 ? Math.min(desiredFood, available * 0.42) : idx === 1 ? Math.min(transportNeed * 0.75, available * 0.12) : idx === 3 ? Math.min(householdNeed * 0.65, available * 0.08) : 0;
-      if (amounts[idx] > floor) { amounts[idx] = Math.max(0, amounts[idx] - 100); changed = true; break; }
-    }
-    if (!changed) break;
-  }
-  while (amounts.reduce((sum, amount) => sum + amount, 0) > available) {
-    const idx = amounts[2] > 0 ? 2 : amounts[4] > 0 ? 4 : amounts[3] > 0 ? 3 : amounts[1] > 0 ? 1 : 0;
-    amounts[idx] = Math.max(0, amounts[idx] - 100);
-  }
-  const buffer = Math.max(0, available - amounts.reduce((sum, amount) => sum + amount, 0));
-  const safetyTotal = amounts[4] + buffer;
-  return {
-    buffer,
-    safetyTotal,
-    note: `${cfg.note} Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar och ${profile.children} barn. ${lowSpace ? 'Budgeten är tajt för hushållets storlek, så Klirr drar hellre ner på nöje/övrigt än att göra mat och hushåll för snävt. ' : ''}Marginal kvar: cirka ${fmt(buffer)}. Total trygghetsdel: cirka ${fmt(safetyTotal)}.`,
-    items: labels.map(([label, category], idx) => ({ id: `vp_ai_${mode}_${idx}_${Date.now()}`, label, amount: Math.max(0, amounts[idx]), category, include: true })),
-  };
-}
-
 function VariablePlanView({ variablePlan, setVariablePlan, summary, householdProfile }: { variablePlan: VariablePlanItem[]; setVariablePlan: (p: VariablePlanItem[]) => void; summary: ReturnType<typeof calculateBudget>; householdProfile?: HouseholdProfile }) {
   const [mode, setMode] = useState<BudgetSuggestionMode>('balanced');
   const [suggestion, setSuggestion] = useState<ReturnType<typeof suggestVariableBudget> | null>(null);
@@ -507,16 +406,18 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary, householdPro
       const data = await response.json();
       if (Array.isArray(data.items)) {
         setSuggestion({
-          buffer: Number(data.buffer || 0),
+          marginLeft: Number(data.marginLeft ?? data.buffer ?? 0),
+          buffer: Number(data.buffer || data.marginLeft || 0),
           safetyTotal: Number(data.safetyTotal || 0),
           note: data.explanation || 'Budget Buddy skapade ett förslag baserat på kvar efter måsten.',
+          explanationNotes: Array.isArray(data.explanationNotes) ? data.explanationNotes : [data.explanation || 'Budget Buddy skapade ett förslag baserat på kvar efter måsten.'],
           items: data.items.map((item: any, idx: number) => ({ id: `vp_ai_api_${Date.now()}_${idx}`, label: String(item.label || 'Rörlig post'), amount: Number(item.amount || 0), category: String(item.category || 'Rörligt'), include: true })),
         });
       } else {
-        setSuggestion(suggestVariableBudget(remainingAfterFixed, nextMode, householdProfile));
+        setSuggestion(suggestVariableBudget({ available: remainingAfterFixed, mode: nextMode, householdProfile, currentVariablePlan: variablePlan }));
       }
     } catch {
-      setSuggestion(suggestVariableBudget(remainingAfterFixed, nextMode, householdProfile));
+      setSuggestion(suggestVariableBudget({ available: remainingAfterFixed, mode: nextMode, householdProfile, currentVariablePlan: variablePlan }));
     } finally {
       setSuggestBusy(false);
     }
@@ -527,7 +428,7 @@ function VariablePlanView({ variablePlan, setVariablePlan, summary, householdPro
   }
   return <><PageTitle title="Rörlig plan" subtitle="Pengarna du kan styra efter månadens måsten: mat, transport, nöje, sparande och övrigt." />
     <div className="grid grid-3"><MetricCard label="Kvar efter måsten" value={fmtSigned(remainingAfterFixed)} tone={remainingAfterFixed >= 0 ? 'good' : 'bad'} /><MetricCard label="Rörlig plan totalt" value={fmt(total)} /><MetricCard label="Kvar efter plan" value={fmtSigned(summary.remainingAfterPlan)} tone={summary.remainingAfterPlan >= 0 ? 'good' : 'bad'} /></div>
-    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h3>✨ Föreslå budget</h3><p className="hint">Budget Buddy räknar på vad du har kvar efter fasta kostnader och föreslår en rörlig månadsplan. Förslaget ändrar inget förrän du trycker på "Använd förslaget".</p></div><span className="pill green">AI-ready / lokal fallback</span></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 230 }} value={mode} onChange={e => { const next = e.target.value as BudgetSuggestionMode; setMode(next); makeSuggestion(next); }}><option value="safe">Trygg budget</option><option value="balanced">Balanserad budget</option><option value="boost">Lite friare budget</option></select><button className="btn primary" disabled={suggestBusy} onClick={() => makeSuggestion()}>{suggestBusy ? 'Tar fram förslag…' : 'Föreslå budget'}</button>{suggestion && <button className="btn" onClick={applySuggestion}>Använd förslaget</button>}</div>{suggestion && <div className="suggestion-box"><p><b>Budget Buddys förslag:</b> {suggestion.note}</p><p className="hint">Lämnar cirka <b>{fmt(suggestion.buffer)}</b> som extra marginal efter den rörliga planen. Total trygghetsdel: <b>{fmt(suggestion.safetyTotal)}</b>.</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}<br/><small style={{ color: 'var(--muted)' }}>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}</div></div>}</Card>
+    <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h3>✨ Föreslå budget</h3><p className="hint">Budget Buddy räknar på vad du har kvar efter fasta kostnader och föreslår en rörlig månadsplan. Förslaget ändrar inget förrän du trycker på "Använd förslaget".</p></div><span className="pill green">AI-ready / lokal fallback</span></div><div className="row" style={{ marginTop: 12 }}><select className="select" style={{ maxWidth: 230 }} value={mode} onChange={e => { const next = e.target.value as BudgetSuggestionMode; setMode(next); makeSuggestion(next); }}><option value="safe">Trygg budget</option><option value="balanced">Balanserad budget</option><option value="boost">Lite friare budget</option></select><button className="btn primary" disabled={suggestBusy} onClick={() => makeSuggestion()}>{suggestBusy ? 'Tar fram förslag…' : 'Föreslå budget'}</button>{suggestion && <button className="btn" onClick={applySuggestion}>Använd förslaget</button>}</div>{suggestion && <div className="suggestion-box"><p><b>Budget Buddys förslag:</b> {suggestion.note}</p><p className="hint">Lämnar cirka <b>{fmt(suggestion.marginLeft ?? suggestion.buffer)}</b> som extra marginal efter den rörliga planen. Total trygghetsdel: <b>{fmt(suggestion.safetyTotal)}</b>.</p><div className="stack">{suggestion.items.map(item => <div className="list-line" key={item.id}><span>{item.label}<br/><small style={{ color: 'var(--muted)' }}>{item.category}</small></span><b className="mono">{fmt(item.amount)}</b></div>)}</div></div>}</Card>
     <Card><h3>Redigera rörlig plan</h3><div className="stack">{variablePlan.map(v => <div className="edit-row variable-edit-row" key={v.id}><label className="toggle-label"><input type="checkbox" checked={v.include} onChange={e => update(v.id, { include: e.target.checked })} /> På</label><input className="input" value={v.label} onChange={e => update(v.id, { label: e.target.value })} /><input className="input money-input" type="number" value={v.amount} onChange={e => update(v.id, { amount: Number(e.target.value) })} /><input className="input category-input" value={v.category} onChange={e => update(v.id, { category: e.target.value })} /><button className="btn small danger" onClick={() => setVariablePlan(variablePlan.filter(x => x.id !== v.id))}>Ta bort</button></div>)}</div><button className="btn" style={{ marginTop: 12 }} onClick={add}>Lägg till rad</button></Card>
   </>;
 }
@@ -737,6 +638,7 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
         <label><span className="metric-label">Antal vuxna</span><input className="input" type="number" min={1} value={profile.adults} onChange={e => patch({ adults: Number(e.target.value) })} /></label>
         <label><span className="metric-label">Antal barn</span><input className="input" type="number" min={0} value={profile.children} onChange={e => patch({ children: Number(e.target.value) })} /></label>
         <label><span className="metric-label">Antal tonåringar</span><input className="input" type="number" min={0} value={profile.teens} onChange={e => patch({ teens: Number(e.target.value) })} /></label>
+        <label><span className="metric-label">Antal husdjur</span><input className="input" type="number" min={0} value={profile.pets || 0} onChange={e => patch({ pets: Number(e.target.value) })} /></label>
       </div><div className="grid grid-2" style={{ marginTop: 14 }}>
         <label><span className="metric-label">Matnivå</span><select className="select" value={profile.foodAmbition} onChange={e => patch({ foodAmbition: e.target.value as FoodAmbition })}><option value="budget">Budget</option><option value="normal">Normal</option><option value="comfortable">Bekväm</option></select></label>
         <label><span className="metric-label">Transportbehov</span><select className="select" value={profile.transportNeed} onChange={e => patch({ transportNeed: e.target.value as TransportNeed })}><option value="low">Lågt</option><option value="normal">Normalt</option><option value="high">Högt</option></select></label>

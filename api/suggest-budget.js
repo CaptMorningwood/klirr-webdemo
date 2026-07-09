@@ -5,6 +5,7 @@ function normalizeHouseholdProfile(profile) {
     adults: Math.max(1, Math.round(Number(profile?.adults || 1))),
     children: Math.max(0, Math.round(Number(profile?.children || 0))),
     teens: Math.max(0, Math.round(Number(profile?.teens || 0))),
+    pets: Math.max(0, Math.round(Number(profile?.pets || 0))),
     foodAmbition,
     transportNeed,
     householdType: profile?.householdType || 'single',
@@ -36,8 +37,8 @@ function buildDeterministicSuggestion(summary, mode = 'balanced', householdProfi
   }
 
   const profile = normalizeHouseholdProfile(householdProfile);
-  const units = Math.max(1, profile.adults + profile.teens * 0.9 + profile.children * 0.6);
-  const ambition = { budget: { base: 3000, extra: 1800 }, normal: { base: 4000, extra: 2400 }, comfortable: { base: 5200, extra: 3000 } }[profile.foodAmbition];
+  const units = Math.max(1, profile.adults + profile.teens * 0.9 + profile.children * 0.6 + (profile.pets || 0) * 0.2);
+  const ambition = { budget: { base: 3000, extra: 1700 }, normal: { base: 4000, extra: 2400 }, comfortable: { base: 5200, extra: 3100 } }[profile.foodAmbition];
   const foodNeed = ambition.base + Math.max(0, units - 1) * ambition.extra;
   const householdNeed = 900 + Math.max(0, units - 1) * 450;
   const transportNeed = profile.transportNeed === 'low' ? 900 : profile.transportNeed === 'high' ? 3000 : 1800;
@@ -79,6 +80,7 @@ function buildDeterministicSuggestion(summary, mode = 'balanced', householdProfi
     mode: cfg.label,
     explanation: `${cfg.note} Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar och ${profile.children} barn. ${lowSpace ? 'Budgeten är tajt för hushållets storlek, så Klirr drar hellre ner på nöje/övrigt än att göra mat och hushåll för snävt. ' : ''}Marginal kvar: cirka ${buffer.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.`,
     buffer,
+    marginLeft: buffer,
     safetyTotal,
     householdProfile: profile,
     items: labels.map(([label, category], index) => ({ label, category, amount: Math.max(0, amounts[index]) })),

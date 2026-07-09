@@ -119,7 +119,12 @@ export function parseCsvToRows(text: string, bankKey: BankKey = 'auto'): ParsedR
     let description = '';
     let amount = NaN;
 
-    if (dateIdx >= 0 && descIdx >= 0 && amountIdx >= 0) {
+    const isSwedbankRowNumberExport = key === 'swedbank' && /radnummer/i.test(header[0] || '') && p.length >= 11;
+    if (isSwedbankRowNumberExport) {
+      date = toIsoDate(p[5] || p[6]);
+      description = p[9] || p[8];
+      amount = toAmount(p[10]);
+    } else if (dateIdx >= 0 && descIdx >= 0 && amountIdx >= 0) {
       date = toIsoDate(p[dateIdx]);
       description = p[descIdx];
       amount = toAmount(p[amountIdx]);
