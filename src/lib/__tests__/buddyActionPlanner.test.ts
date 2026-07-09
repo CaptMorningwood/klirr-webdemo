@@ -190,3 +190,57 @@ describe('issue 33 safe variable parsing and crisis budgets', () => {
     }
   });
 });
+
+describe('budget checkup action', () => {
+  it('builds a rich, sorted and actionable budget health check without mutating context', () => {
+    const context = {
+      possibleIncomeDuplicates: [{ imported: { id: 'rec_salary', label: 'Importerad lön', amount: 32000 } }],
+      summary: {
+        totalIncome: 30000,
+        fixedTotal: 25000,
+        remainingAfterFixed: 5000,
+        remainingAfterPlan: -400,
+        variablePlanTotal: 5400,
+        incomeItems: [{ id: 'support', label: 'Barnbidrag', amount: 9000, category: 'Inkomst', source: 'manual', frequency: 'monthly' }],
+      },
+      variablePlan: [
+        { id: 'food', label: 'Mat och hushåll', amount: 4200, category: 'Mat', include: true },
+        { id: 'fun', label: 'Nöje', amount: 0, category: 'Nöje', include: true },
+        { id: 'buffer', label: 'Buffert/sparande', amount: 0, category: 'Buffert', include: true },
+      ],
+      householdProfile: { adults: 1, children: 0, teens: 0 },
+      unconfirmedRecurringCount: 2,
+      transferCandidateCount: 1,
+      visibleReviewCount: 10,
+      handledReviewCount: 1,
+    };
+    const before = JSON.stringify(context);
+    const plan = planBuddyAction({ message: 'Städa min budget ✨', context });
+    expect(JSON.stringify(context)).toBe(before);
+    expect(plan.proposedAction?.type).toBe('run_budget_checkup');
+    if (plan.proposedAction?.type === 'run_budget_checkup') {
+      const issues = plan.proposedAction.payload.issues;
+      expect(issues.length).toBeGreaterThanOrEqual(10);
+      expect(issues.map(issue => issue.severity).slice(0, 2)).toEqual(['danger', 'danger']);
+      expect(issues.every(issue => issue.message || issue.tab || issue.proposedAction || issue.nextAction)).toBe(true);
+      expect(issues.some(issue => /dubbelräkning/i.test(issue.label) && issue.proposedAction?.type === 'fix_duplicate_income')).toBe(true);
+      expect(issues.some(issue => /Barnbidrag/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Nöje är 0/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Buffert\/sparande är 0/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Mat tar över/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Måsten är över 80%/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /återkommande/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /överföringar/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Många oklara/i.test(issue.label))).toBe(true);
+    }
+  });
+
+  it('detects missing household profile and missing variable plan', () => {
+    const plan = planBuddyAction({ message: 'kolla budget', context: { summary: { totalIncome: 25000, fixedTotal: 10000, remainingAfterFixed: 15000, remainingAfterPlan: 15000, variablePlanTotal: 0 }, householdProfileMissing: true, variablePlan: [] } });
+    expect(plan.proposedAction?.type).toBe('run_budget_checkup');
+    if (plan.proposedAction?.type === 'run_budget_checkup') {
+      expect(plan.proposedAction.payload.issues.some(issue => /Hushållsprofil saknas/i.test(issue.label) && issue.tab === 'household')).toBe(true);
+      expect(plan.proposedAction.payload.issues.some(issue => /Rörlig plan saknas/i.test(issue.label) && issue.message)).toBe(true);
+    }
+  });
+});
