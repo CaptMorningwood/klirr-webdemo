@@ -135,19 +135,26 @@ export function redistributeExcessToSafety(excess: number, mode: BudgetSuggestio
   return { toMargin: round100(excess * marginShare), toSavings: Math.max(0, excess - round100(excess * marginShare)) };
 }
 
-function getTightBudgetTargets(available: number, caps: Record<string, CategoryCap>, foodReference: number, mode: BudgetSuggestionMode) {
-  const essentialGuidelineNeed = foodReference + caps['Transport rörligt'].recommendedMin + caps['Övrigt hushåll'].recommendedMin;
-  const tight = available < essentialGuidelineNeed + Math.max(600, available * 0.12);
-  const extremelyTight = available < essentialGuidelineNeed * 0.62;
-  if (!tight) return { tight, extremelyTight, marginMin: 0, savingsMin: 0, foodTarget: caps['Mat och hushåll'].recommendedTarget, funTarget: caps.Nöje.recommendedTarget };
+function modeSafetyConfig(mode: BudgetSuggestionMode) {
+  return {
+    safe: { marginPct: 0.10, savingsPct: 0.08, combinedPct: 0.15, foodShareCap: 0.60, emergencyFoodShareCap: 0.70, foodFactor: 0.98 },
+    balanced: { marginPct: 0.07, savingsPct: 0.06, combinedPct: 0.13, foodShareCap: 0.65, emergencyFoodShareCap: 0.70, foodFactor: 1.03 },
+    boost: { marginPct: 0.04, savingsPct: 0.04, combinedPct: 0.08, foodShareCap: 0.70, emergencyFoodShareCap: 0.70, foodFactor: 1.12 },
+  }[mode];
+}
 
-  const foodReferenceShare = mode === 'safe' ? 0.78 : mode === 'boost' ? 0.85 : 0.82;
-  const foodAvailableShare = mode === 'safe' ? 0.62 : mode === 'boost' ? 0.70 : 0.66;
-  const foodTarget = floor100(Math.min(foodReference * foodReferenceShare, available * foodAvailableShare));
-  const marginMin = extremelyTight ? 0 : Math.max(300, floor100(available * (mode === 'safe' ? 0.08 : 0.06)));
-  const savingsMin = extremelyTight ? 0 : Math.max(300, floor100(available * (mode === 'safe' ? 0.07 : 0.05)));
-  const funTarget = extremelyTight ? 0 : mode === 'boost' ? 500 : 300;
-  return { tight, extremelyTight, marginMin, savingsMin, foodTarget, funTarget };
+function reserveSafetyFirst(available: number, mode: BudgetSuggestionMode) {
+  const config = modeSafetyConfig(mode);
+  let margin = floor100(available * config.marginPct);
+  let savings = floor100(available * config.savingsPct);
+  const combinedMin = floor100(available * config.combinedPct);
+  if (margin + savings < combinedMin) savings += combinedMin - margin - savings;
+  return { margin, savings, combined: margin + savings };
+}
+
+function reduceAmount(current: number, floor: number, need: number) {
+  const reduction = Math.min(Math.max(0, current - floor), need);
+  return { next: current - reduction, remainingNeed: need - reduction };
 }
 
 export function suggestVariableBudget(input: {
@@ -170,53 +177,96 @@ export function suggestVariableBudget(input: {
     balanced: { label: 'Balanserad budget' },
     boost: { label: 'Lite friare budget' },
   }[input.mode];
+  const config = modeSafetyConfig(input.mode);
   const foodReference = getFoodReferenceAmount(profile);
-  const tightTargets = getTightBudgetTargets(available, caps, foodReference, input.mode);
-  const lowSpace = tightTargets.tight || available < caps['Mat och hushåll'].recommendedMin + caps['Transport rörligt'].recommendedMin + caps['Övrigt hushåll'].recommendedMin + 1000;
-  const amounts = [
-    tightTargets.foodTarget,
-    tightTargets.tight ? caps['Transport rörligt'].recommendedMin : caps['Transport rörligt'].recommendedTarget,
-    tightTargets.tight ? tightTargets.funTarget : lowSpace ? caps.Nöje.recommendedMin : caps.Nöje.recommendedTarget,
-    tightTargets.tight ? caps['Övrigt hushåll'].recommendedMin : caps['Övrigt hushåll'].recommendedTarget,
-    tightTargets.tight ? tightTargets.savingsMin : caps['Buffert/sparande'].recommendedTarget,
-  ];
-  let marginLeft = tightTargets.tight ? tightTargets.marginMin : caps['Marginal kvar'].recommendedTarget;
+  const transportMin = caps['Transport rörligt'].recommendedMin;
+  const householdMin = caps['Övrigt hushåll'].recommendedMin;
+  const foodNormalCap = floor100(available * config.foodShareCap);
+  const emergencyFoodCap = floor100(available * config.emergencyFoodShareCap);
+  const foodCashflowFloor = floor100(Math.min(foodReference * 0.62, emergencyFoodCap));
+  const minimumCategoryNeed = foodCashflowFloor + transportMin + householdMin;
+  const safetyReserve = reserveSafetyFirst(available, input.mode);
+  const emergencyMode = available < minimumCategoryNeed + Math.max(300, floor100(available * 0.04));
 
-  while (amounts.reduce((s, a) => s + a, 0) + marginLeft > available) {
-    const order = tightTargets.tight ? [2, 3, 1, 0, 4] : [2, 4, 3, 1, 0];
-    const idx = order.find(i => amounts[i] > (tightTargets.tight && i === 4 ? tightTargets.savingsMin : i === 0 ? Math.min(caps['Mat och hushåll'].recommendedMin, tightTargets.foodTarget) : i === 1 ? caps['Transport rörligt'].recommendedMin : i === 3 ? caps['Övrigt hushåll'].recommendedMin : 0));
-    if (idx === undefined) {
-      if (marginLeft > tightTargets.marginMin) marginLeft = Math.max(tightTargets.marginMin, marginLeft - 100);
-      else break;
-    } else {
-      const floor = tightTargets.tight && idx === 4 ? tightTargets.savingsMin : idx === 0 ? Math.min(caps['Mat och hushåll'].recommendedMin, tightTargets.foodTarget) : idx === 1 ? caps['Transport rörligt'].recommendedMin : idx === 3 ? caps['Övrigt hushåll'].recommendedMin : 0;
-      amounts[idx] = Math.max(floor, amounts[idx] - 100);
+  let reservedMargin = safetyReserve.margin;
+  let reservedSavings = safetyReserve.savings;
+  let safetyReduced = false;
+
+  if (emergencyMode) {
+    const emergencySafetyPct = available < minimumCategoryNeed ? 0 : input.mode === 'safe' ? 0.08 : input.mode === 'balanced' ? 0.06 : 0.04;
+    const emergencySafety = floor100(available * emergencySafetyPct);
+    reservedMargin = floor100(emergencySafety * 0.55);
+    reservedSavings = emergencySafety - reservedMargin;
+    safetyReduced = reservedMargin + reservedSavings < safetyReserve.combined;
+  }
+
+  let spendableForCategories = Math.max(0, available - reservedMargin - reservedSavings);
+  const tightCashflow = emergencyMode || spendableForCategories < foodReference + transportMin + householdMin + caps.Nöje.recommendedMin;
+  const foodReferenceTarget = tightCashflow ? foodReference * 0.78 : foodReference * config.foodFactor;
+  const foodCap = emergencyMode ? emergencyFoodCap : foodNormalCap;
+  const foodTarget = floor100(Math.min(foodReferenceTarget, foodCap));
+
+  const amounts = [
+    foodTarget,
+    tightCashflow ? transportMin : caps['Transport rörligt'].recommendedTarget,
+    tightCashflow ? (spendableForCategories >= minimumCategoryNeed + 600 ? 300 : 0) : caps.Nöje.recommendedTarget,
+    tightCashflow ? householdMin : caps['Övrigt hushåll'].recommendedTarget,
+    reservedSavings,
+  ];
+  let marginLeft = reservedMargin;
+
+  let plannedCategories = amounts[0] + amounts[1] + amounts[2] + amounts[3];
+  if (plannedCategories > spendableForCategories) {
+    let need = plannedCategories - spendableForCategories;
+    let reduced = reduceAmount(amounts[2], 0, need);
+    amounts[2] = reduced.next;
+    need = reduced.remainingNeed;
+    reduced = reduceAmount(amounts[3], emergencyMode ? 0 : householdMin, need);
+    amounts[3] = reduced.next;
+    need = reduced.remainingNeed;
+    reduced = reduceAmount(amounts[1], emergencyMode ? 0 : transportMin, need);
+    amounts[1] = reduced.next;
+    need = reduced.remainingNeed;
+    reduced = reduceAmount(amounts[0], emergencyMode ? 0 : foodCashflowFloor, need);
+    amounts[0] = reduced.next;
+    need = reduced.remainingNeed;
+
+    if (need > 0) {
+      safetyReduced = true;
+      reduced = reduceAmount(amounts[4], emergencyMode && available < minimumCategoryNeed ? 0 : Math.min(amounts[4], 100), need);
+      amounts[4] = reduced.next;
+      need = reduced.remainingNeed;
+      reduced = reduceAmount(marginLeft, emergencyMode && available < minimumCategoryNeed ? 0 : Math.min(marginLeft, 100), need);
+      marginLeft = reduced.next;
     }
   }
 
-  let items: VariablePlanItem[] = LABELS.map(([label, category], idx) => ({ id: `vp_suggest_${input.mode}_${idx}`, label, amount: Math.min(amounts[idx], caps[label].hardCap), category, include: true }));
-  let clampedCategories: string[] = LABELS.filter(([label], idx) => amounts[idx] > caps[label].hardCap).map(([label]) => label);
-  let planned = items.reduce((s, item) => s + item.amount, 0);
-  let excess = Math.max(0, available - planned - marginLeft);
-  const overflowToSafety = excess;
-  if (excess > 0) {
-    const safety = redistributeExcessToSafety(excess, input.mode);
-    items = items.map(item => item.label === 'Buffert/sparande' ? { ...item, amount: item.amount + safety.toSavings } : item);
+  plannedCategories = amounts[0] + amounts[1] + amounts[2] + amounts[3];
+  const unallocated = Math.max(0, available - plannedCategories - amounts[4] - marginLeft);
+  const overflowToSafety = unallocated;
+  if (unallocated > 0) {
+    const safety = redistributeExcessToSafety(unallocated, input.mode);
+    amounts[4] += safety.toSavings;
     marginLeft += safety.toMargin;
   }
+
+  let items: VariablePlanItem[] = LABELS.map(([label, category], idx) => ({ id: `vp_suggest_${input.mode}_${idx}`, label, amount: Math.min(floor100(amounts[idx]), caps[label].hardCap), category, include: true }));
+  let clampedCategories: string[] = LABELS.filter(([label], idx) => amounts[idx] > caps[label].hardCap).map(([label]) => label);
   const clamped = clampBudgetItemsToCaps(items, caps);
   items = clamped.items;
   clampedCategories = Array.from(new Set([...clampedCategories, ...clamped.clampedCategories]));
-  planned = items.reduce((s, item) => s + item.amount, 0);
+  const planned = items.reduce((s, item) => s + item.amount, 0);
   marginLeft = Math.max(0, available - planned);
   const safetyTotal = (items.find(item => item.label === 'Buffert/sparande')?.amount || 0) + marginLeft;
   const foodAmount = items.find(item => item.label === 'Mat och hushåll')?.amount || 0;
-  const guidelineComparison = { food: compareFoodGuideline(foodReference, foodAmount, tightTargets.tight) };
+  const foodBelowReference = foodAmount < foodReference * 0.85;
+  const guidelineComparison = { food: compareFoodGuideline(foodReference, foodAmount, tightCashflow || foodBelowReference) };
   const capNote = clampedCategories.length ? ` ${clampedCategories.join(', ')} har begränsats till rimlighetstak.` : '';
   const overflowNote = overflowToSafety > 0 ? ` Extra utrymme (${overflowToSafety.toLocaleString('sv-SE')} kr) läggs på buffert/sparande och marginal i stället för att blåsa upp vardagskategorier.` : '';
-  const modeIntro = tightTargets.tight
-    ? 'Tajt budgetläge: utrymmet efter måsten är lågt jämfört med hushållets riktvärden. Förslaget prioriterar kassaflöde, håller mat och hushållsförbrukning under referensnivån, separerar övrigt hushåll från mat samt behöver granskas manuellt. '
-    : lowSpace ? 'utrymmet är lågt, så mat/hushåll prioriteras och nöje hålls lågt. ' : '';
-  const note = `${preset.label}: ${modeIntro}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser främst matvaror och förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
+  const tightNote = tightCashflow || safetyReduced || foodBelowReference
+    ? 'Det här är ett tajt kassaflödesläge, inte en långsiktigt trygg budget. Klirr prioriterar kassaflöde och håller nere vardagskategorier för att lämna marginal och planen behöver granskas manuellt. '
+    : '';
+  const emergencyNote = emergencyMode ? 'Emergency food-first-läge: tillgängligt belopp räcker knappt till miniminivåer, så säkerhetsdelen har sänkts men inte nollats om det finns utrymme. ' : '';
+  const note = `${preset.label}: ${tightNote}${emergencyNote}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser matvaror, hygien och annan löpande förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
   return { marginLeft, buffer: marginLeft, safetyTotal, note, categoryCaps: caps, clampedCategories, overflowToSafety, guidelineComparison, explanationNotes: [note, guidelineComparison.food.note, 'Siffrorna är deterministiskt beräknade i Klirr och OpenAI får bara formulera texten.'], items };
 }
