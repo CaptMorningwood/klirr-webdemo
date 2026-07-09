@@ -145,6 +145,8 @@ Säkerhetsgränser:
 - Ge inte juridisk rådgivning som om den vore säker.
 - Lova aldrig att ett ekonomiskt beslut är riskfritt.
 - Ändra aldrig användarens data.
+- Du får föreslå ändringar i Klirr, men aldrig påstå att ändringen är genomförd förrän användaren har bekräftat och appen har applicerat den.
+- När du föreslår en ändring: sammanfatta exakt vad som ändras, fråga om användaren vill genomföra det, föreslå max en ändring åt gången och säg aldrig 'jag har uppdaterat' före bekräftelse.
 - Låtsas inte att du vet saker som inte finns i budgetdatan.
 
 Om frågan gäller skulder, skuldsanering, skatt, försäkring eller avtal:
@@ -159,6 +161,44 @@ Om data saknas:
 - var inte stel
 
 Du är inte en riktig finansiell rådgivare. Du är Budget Buddy — en kompisig budgethjälp i Klirr som gör ekonomin lättare att förstå.`;
+
+
+function uid(prefix) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+function round100(n) { return Math.round(n / 100) * 100; }
+function estimateNet(gross, taxRate = 0.32) { return round100(Number(gross) * (1 - taxRate)); }
+function extractGrossSalary(message) {
+  const text = String(message).toLowerCase().replace(/\s+/g, ' ');
+  if (!/(brutto|lön|inkomst|efter skatt|netto)/i.test(text)) return null;
+  const matches = [...text.matchAll(/(\d[\d\s]{3,})(?:\s*kr)?/g)].map(m => Number(m[1].replace(/\s/g, ''))).filter(n => n >= 10000 && n < 500000);
+  return matches[0] || null;
+}
+function makeIncomeAction(message, context) {
+  const gross = extractGrossSalary(message);
+  if (!gross) return null;
+  const net = estimateNet(gross);
+  const action = {
+    id: uid('buddy_action'),
+    type: 'update_income',
+    title: 'Uppdatera inkomst',
+    description: `Sätt månadsinkomst efter skatt till cirka ${net.toLocaleString('sv-SE')} kr.`,
+    payload: { incomeId: Array.isArray(context?.incomes) && context.incomes.length === 1 ? context.incomes[0].id : undefined, label: 'Lön efter skatt', amount: net, frequency: 'monthly', source: 'buddy', notes: `Grovt uppskattad från ${gross.toLocaleString('sv-SE')} kr brutto med 32% skatt.` },
+    confirmLabel: 'Ja, uppdatera min inkomst',
+    cancelLabel: 'Nej, låt den vara',
+    status: 'pending',
+  };
+  return { source: 'local-fallback', message: `Grovt räknat blir ${gross.toLocaleString('sv-SE')} kr brutto ungefär ${net.toLocaleString('sv-SE')} kr efter skatt om vi antar runt 32% skatt 💸 Exakt nettolön beror på kommun, skattetabell, ålder och avdrag. Vill du att jag uppdaterar inkomsten i Klirr till det?`, actions: [], proposedAction: action };
+}
+function makeVariablePlanAction(message, context) {
+  if (!/(tryggare|tajtare|rörlig budget|rörliga budget|budgetförslag|föreslå.*budget|gör budgeten)/i.test(message)) return null;
+  const suggestion = context?.budgetSuggestion;
+  const current = Array.isArray(context?.variablePlan) ? context.variablePlan : [];
+  const items = Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current;
+  if (!items.length) return null;
+  return { source: 'local-fallback', message: 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸 Här är ett tydligt förslag — inget ändras förrän du säger ja.', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: 'Använd ny rörlig budget', description: 'Ersätt den rörliga planen med ett tryggare förslag baserat på hushåll och kvar efter måsten.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), marginLeft: Number(context?.summary?.remainingAfterFixed || 0), mode: 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd budgeten', cancelLabel: 'Nej, behåll nuvarande', status: 'pending' } };
+}
+function deterministicActionReply(message, context) {
+  return makeIncomeAction(message, context) || makeVariablePlanAction(message, context);
+}
 
 function pickStyleVariation() {
   const styles = [
@@ -264,7 +304,9 @@ export default async function handler(req, res) {
           content: String(m.content).slice(0, 1200),
         }))
     : [];
-  if (!process.env.OPENAI_API_KEY) return res.status(200).json(fallbackReply(message, context));
+  const deterministic = deterministicActionReply(message, context);
+  if (deterministic?.proposedAction) return res.status(200).json(deterministic);
+  if (!process.env.OPENAI_API_KEY) return res.status(200).json(deterministic || fallbackReply(message, context));
 
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
