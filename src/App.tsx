@@ -38,25 +38,36 @@ const initialState: AppState = {
 
 const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
   { id: 'dashboard', label: 'Översikt', shortLabel: 'Hem', icon: '⌁' },
-  { id: 'musts', label: 'Måsten', shortLabel: 'Måsten', icon: '📌' },
-  { id: 'import', label: 'Importera', shortLabel: 'Import', icon: '⬆' },
-  { id: 'variablePlan', label: 'Rörlig plan', shortLabel: 'Plan', icon: '🧮' },
-  { id: 'buddy', label: 'Budget Buddy', shortLabel: 'Buddy', icon: '✨' },
-  { id: 'recurring', label: 'Återkommande', shortLabel: 'Återkom.', icon: '🔁' },
-  { id: 'review', label: 'Oklara poster', shortLabel: 'Oklart', icon: '⚠️' },
-  { id: 'scenarios', label: 'Scenarier', shortLabel: 'Scenario', icon: '🎛️' },
-  { id: 'transfers', label: 'Överföringar', shortLabel: 'Flytt', icon: '↔' },
-  { id: 'income', label: 'Inkomst', shortLabel: 'Inkomst', icon: '＋' },
-  { id: 'accounts', label: 'Konton', shortLabel: 'Konton', icon: '🏦' },
+  { id: 'plan', label: 'Plan', shortLabel: 'Plan', icon: '🧮' },
+  { id: 'importReview', label: 'Import & granskning', shortLabel: 'Import', icon: '⬆' },
   { id: 'household', label: 'Hushåll', shortLabel: 'Hushåll', icon: '🏠' },
-  { id: 'transactions', label: 'Transaktioner', shortLabel: 'Trans.', icon: '≡' },
-  { id: 'rules', label: 'Regler', shortLabel: 'Regler', icon: '⚙' },
-  { id: 'settings', label: 'Inställningar', shortLabel: 'Mer', icon: '⋯' },
+  { id: 'buddy', label: 'Budget Buddy', shortLabel: 'Buddy', icon: '✨' },
+  { id: 'more', label: 'Mer / Inställningar', shortLabel: 'Mer', icon: '⋯' },
 ];
 
-const primaryMobileTabs: TabId[] = ['dashboard', 'musts', 'import', 'variablePlan', 'buddy'];
+const primaryMobileTabs: TabId[] = ['dashboard', 'plan', 'importReview', 'household', 'buddy'];
 const primaryMobileNav = nav.filter(item => primaryMobileTabs.includes(item.id));
 const drawerNav = nav.filter(item => !primaryMobileTabs.includes(item.id));
+
+type PlanSection = 'musts' | 'variablePlan' | 'scenarios';
+type ImportReviewSection = 'import' | 'accounts' | 'transactions' | 'transfers' | 'recurring' | 'review';
+type HouseholdSection = 'profile' | 'income';
+type MoreSection = 'rules' | 'settings';
+
+const legacyTabMap: Partial<Record<TabId, { tab: TabId; section?: PlanSection | ImportReviewSection | HouseholdSection | MoreSection }>> = {
+  musts: { tab: 'plan', section: 'musts' },
+  variablePlan: { tab: 'plan', section: 'variablePlan' },
+  scenarios: { tab: 'plan', section: 'scenarios' },
+  import: { tab: 'importReview', section: 'import' },
+  accounts: { tab: 'importReview', section: 'accounts' },
+  transactions: { tab: 'importReview', section: 'transactions' },
+  transfers: { tab: 'importReview', section: 'transfers' },
+  recurring: { tab: 'importReview', section: 'recurring' },
+  review: { tab: 'importReview', section: 'review' },
+  income: { tab: 'household', section: 'income' },
+  rules: { tab: 'more', section: 'rules' },
+  settings: { tab: 'more', section: 'settings' },
+};
 
 function getTabLabel(id: TabId) {
   return nav.find(item => item.id === id)?.label || 'Klirr';
@@ -117,6 +128,10 @@ function reviewTypeLabel(type: string) {
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState() || initialState);
   const [tab, setTab] = useState<TabId>('dashboard');
+  const [planSection, setPlanSection] = useState<PlanSection>('musts');
+  const [importReviewSection, setImportReviewSection] = useState<ImportReviewSection>('import');
+  const [householdSection, setHouseholdSection] = useState<HouseholdSection>('profile');
+  const [moreSection, setMoreSection] = useState<MoreSection>('settings');
   const [loaded, setLoaded] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -135,13 +150,20 @@ export default function App() {
 
   const setPartial = (patch: Partial<AppState>) => setState(prev => ({ ...prev, ...patch }));
   const badges: Partial<Record<TabId, number>> = {
-    review: detection.reviewItems.length,
-    transfers: detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length,
-    recurring: detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length,
+    importReview: detection.reviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length,
   };
 
   function selectTab(nextTab: TabId) {
-    setTab(nextTab);
+    const mapped = legacyTabMap[nextTab];
+    if (mapped) {
+      if (mapped.tab === 'plan') setPlanSection(mapped.section as PlanSection);
+      if (mapped.tab === 'importReview') setImportReviewSection(mapped.section as ImportReviewSection);
+      if (mapped.tab === 'household') setHouseholdSection(mapped.section as HouseholdSection);
+      if (mapped.tab === 'more') setMoreSection(mapped.section as MoreSection);
+      setTab(mapped.tab);
+    } else {
+      setTab(nextTab);
+    }
     setMobileMenuOpen(false);
   }
 
@@ -207,20 +229,11 @@ export default function App() {
 
       <main className="main">
         {tab === 'dashboard' && <DashboardView summary={summary} detection={detection} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onExport={() => exportBudgetReport(summary, detection)} />}
+        {tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
+        {tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} />}
+        {tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
         {tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} />}
-        {tab === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
-        {tab === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} summary={summary} householdProfile={state.householdProfile} />}
-        {tab === 'recurring' && <RecurringView detection={detection} decisions={state.recurringDecisions} setDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} addRule={(rule) => setPartial({ rules: [...state.rules, rule] })} />}
-        {tab === 'review' && <ReviewView detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
-        {tab === 'scenarios' && <ScenariosView summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} />}
-        {tab === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
-        {tab === 'income' && <IncomeView incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} />}
-        {tab === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} setAccounts={(accounts) => setPartial({ accounts })} />}
-        {tab === 'household' && <HouseholdView householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} />}
-        {tab === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
-        {tab === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setPartial({ rules })} />}
-        {tab === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
-        {tab === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
+        {tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} onReset={() => { clearState(); setState(initialState); selectTab('dashboard'); }} />}
       </main>
 
       <nav className="mobile-bottom-nav" aria-label="Viktigaste funktioner">
@@ -266,6 +279,42 @@ function DashboardView({ summary, detection, loadDemo, setTab, hasData, onExport
       <Card><h3>Största måsten</h3>{summary.fixedItems.slice(0, 6).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<button className="btn small" style={{ marginTop: 10 }} onClick={() => setTab('musts')}>Visa alla</button></Card>
       <Card><h3>Nästa steg</h3><div className="stack"><button className="btn" onClick={() => setTab('review')}>Granska oklara poster ({detection.reviewItems.length})</button><button className="btn" onClick={() => setTab('recurring')}>Bekräfta återkommande</button><button className="btn" onClick={onExport}>Exportera rapport</button></div></Card>
     </div>
+  </>;
+}
+
+
+function SectionTabs<T extends string>({ items, active, onChange }: { items: Array<{ id: T; label: string; badge?: number }>; active: T; onChange: (id: T) => void }) {
+  return <div className="section-tabs">{items.map(item => <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => onChange(item.id)}>{item.label}{!!item.badge && <span className="badge">{item.badge}</span>}</button>)}</div>;
+}
+
+function PlanView({ active, setActive, summary, scenarioSummary, state, setState, setVariablePlan }: { active: PlanSection; setActive: (s: PlanSection) => void; summary: ReturnType<typeof calculateBudget>; scenarioSummary: ReturnType<typeof calculateBudget>; state: AppState; setState: (s: AppState) => void; setVariablePlan: (p: VariablePlanItem[]) => void }) {
+  return <><PageTitle title="Plan" subtitle="Planera vad månaden ska kosta framåt: måsten, rörlig budget och scenarier." />
+    <SectionTabs<PlanSection> active={active} onChange={setActive} items={[{ id: 'musts', label: 'Måsten' }, { id: 'variablePlan', label: 'Rörlig plan' }, { id: 'scenarios', label: 'Scenarier' }]} />
+    {active === 'musts' && <MustsView summary={summary} state={state} setState={setState} />}
+    {active === 'variablePlan' && <VariablePlanView variablePlan={state.variablePlan} setVariablePlan={setVariablePlan} summary={summary} householdProfile={state.householdProfile} />}
+    {active === 'scenarios' && <ScenariosView summary={summary} scenarioSummary={scenarioSummary} state={state} setState={setState} />}
+  </>;
+}
+
+function ImportReviewView({ active, setActive, detection, state, setPartial, loadDemo }: { active: ImportReviewSection; setActive: (s: ImportReviewSection) => void; detection: DetectionResult; state: AppState; setPartial: (patch: Partial<AppState>) => void; loadDemo: () => void }) {
+  const transferCount = detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length;
+  const recurringCount = detection.recurring.filter(r => r.confidence >= 50 && !state.recurringDecisions[r.id]?.status).length;
+  return <><PageTitle title="Import & granskning" subtitle="Importera kontoutdrag och granska hur Klirr tolkar transaktioner, överföringar och återkommande poster." />
+    <SectionTabs<ImportReviewSection> active={active} onChange={setActive} items={[{ id: 'import', label: 'Importera' }, { id: 'accounts', label: 'Konton' }, { id: 'transactions', label: 'Transaktioner' }, { id: 'transfers', label: 'Överföringar', badge: transferCount }, { id: 'recurring', label: 'Återkommande', badge: recurringCount }, { id: 'review', label: 'Oklara poster', badge: detection.reviewItems.length }]} />
+    {active === 'import' && <ImportView accounts={state.accounts} setAccounts={(accounts) => setPartial({ accounts })} setTransactions={(transactions) => setPartial({ transactions })} transactions={state.transactions} loadDemo={loadDemo} />}
+    {active === 'accounts' && <AccountsView accounts={state.accounts} transactions={state.transactions} setAccounts={(accounts) => setPartial({ accounts })} />}
+    {active === 'transactions' && <TransactionsView transactions={state.transactions} accounts={state.accounts} rules={state.rules} onExport={() => exportTransactionsCsv(state.transactions, state.accounts)} />}
+    {active === 'transfers' && <TransfersView detection={detection} transactions={state.transactions} accounts={state.accounts} decisions={state.transferDecisions} setDecisions={(transferDecisions) => setPartial({ transferDecisions })} />}
+    {active === 'recurring' && <RecurringView detection={detection} decisions={state.recurringDecisions} setDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} addRule={(rule) => setPartial({ rules: [...state.rules, rule] })} />}
+    {active === 'review' && <ReviewView detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
+  </>;
+}
+
+function MoreView({ active, setActive, state, setState, onReset, loadDemo }: { active: MoreSection; setActive: (s: MoreSection) => void; state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void }) {
+  return <><PageTitle title="Mer / Inställningar" subtitle="Regler, export, sync, demo-data och inställningar." />
+    <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }]} />
+    {active === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setState({ ...state, rules })} />}
+    {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} />}
   </>;
 }
 
@@ -671,22 +720,27 @@ function AccountsView({ accounts, transactions, setAccounts }: { accounts: Accou
 }
 
 
-function HouseholdView({ householdProfile, setHouseholdProfile }: { householdProfile?: HouseholdProfile; setHouseholdProfile: (p: HouseholdProfile) => void }) {
+
+function HouseholdView({ active, setActive, householdProfile, setHouseholdProfile, incomes, setIncomes }: { active: HouseholdSection; setActive: (s: HouseholdSection) => void; householdProfile?: HouseholdProfile; setHouseholdProfile: (p: HouseholdProfile) => void; incomes: Income[]; setIncomes: (i: Income[]) => void }) {
   const profile = normalizeHouseholdProfile(householdProfile);
   function patch(patch: Partial<HouseholdProfile>) {
     setHouseholdProfile(normalizeHouseholdProfile({ ...profile, ...patch }));
   }
   const units = householdUnits(profile).toLocaleString('sv-SE', { maximumFractionDigits: 1 });
-  return <><PageTitle title="Hushåll" subtitle="Berätta lite om hushållet så kan Klirr föreslå rimligare mat, transport och vardagsbudget." />
-    <Card className="soft"><p>En ensam person och en stor familj behöver inte samma rörliga budget. Klirr använder hushållsprofilen när Budget Buddy föreslår mat, hushåll, transport och buffert.</p><span className="pill green">Behovsvikt: {units} hushållsenheter</span></Card>
-    <Card><h3>Hushållsprofil</h3><div className="grid grid-3">
-      <label><span className="metric-label">Antal vuxna</span><input className="input" type="number" min={1} value={profile.adults} onChange={e => patch({ adults: Number(e.target.value) })} /></label>
-      <label><span className="metric-label">Antal barn</span><input className="input" type="number" min={0} value={profile.children} onChange={e => patch({ children: Number(e.target.value) })} /></label>
-      <label><span className="metric-label">Antal tonåringar</span><input className="input" type="number" min={0} value={profile.teens} onChange={e => patch({ teens: Number(e.target.value) })} /></label>
-    </div><div className="grid grid-2" style={{ marginTop: 14 }}>
-      <label><span className="metric-label">Matnivå</span><select className="select" value={profile.foodAmbition} onChange={e => patch({ foodAmbition: e.target.value as FoodAmbition })}><option value="budget">Budget</option><option value="normal">Normal</option><option value="comfortable">Bekväm</option></select></label>
-      <label><span className="metric-label">Transportbehov</span><select className="select" value={profile.transportNeed} onChange={e => patch({ transportNeed: e.target.value as TransportNeed })}><option value="low">Lågt</option><option value="normal">Normalt</option><option value="high">Högt</option></select></label>
-    </div></Card>
+  return <><PageTitle title="Hushåll" subtitle="Berätta vilka budgeten gäller och vilka inkomster hushållet har." />
+    <SectionTabs<HouseholdSection> active={active} onChange={setActive} items={[{ id: 'profile', label: 'Hushållsprofil' }, { id: 'income', label: 'Inkomster' }]} />
+    {active === 'profile' && <>
+      <Card className="soft"><p>En ensam person och en stor familj behöver inte samma rörliga budget. Klirr använder hushållsprofilen när Budget Buddy föreslår mat, hushåll, transport och buffert.</p><span className="pill green">Behovsvikt: {units} hushållsenheter</span></Card>
+      <Card><h3>Hushållsprofil</h3><div className="grid grid-3">
+        <label><span className="metric-label">Antal vuxna</span><input className="input" type="number" min={1} value={profile.adults} onChange={e => patch({ adults: Number(e.target.value) })} /></label>
+        <label><span className="metric-label">Antal barn</span><input className="input" type="number" min={0} value={profile.children} onChange={e => patch({ children: Number(e.target.value) })} /></label>
+        <label><span className="metric-label">Antal tonåringar</span><input className="input" type="number" min={0} value={profile.teens} onChange={e => patch({ teens: Number(e.target.value) })} /></label>
+      </div><div className="grid grid-2" style={{ marginTop: 14 }}>
+        <label><span className="metric-label">Matnivå</span><select className="select" value={profile.foodAmbition} onChange={e => patch({ foodAmbition: e.target.value as FoodAmbition })}><option value="budget">Budget</option><option value="normal">Normal</option><option value="comfortable">Bekväm</option></select></label>
+        <label><span className="metric-label">Transportbehov</span><select className="select" value={profile.transportNeed} onChange={e => patch({ transportNeed: e.target.value as TransportNeed })}><option value="low">Lågt</option><option value="normal">Normalt</option><option value="high">Högt</option></select></label>
+      </div></Card>
+    </>}
+    {active === 'income' && <IncomeView incomes={incomes} setIncomes={setIncomes} />}
   </>;
 }
 

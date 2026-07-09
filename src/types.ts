@@ -4,6 +4,9 @@ export type DecisionStatus = 'pending' | 'confirmed' | 'rejected';
 export type TabId =
   | 'dashboard'
   | 'buddy'
+  | 'plan'
+  | 'importReview'
+  | 'more'
   | 'musts'
   | 'variablePlan'
   | 'recurring'
