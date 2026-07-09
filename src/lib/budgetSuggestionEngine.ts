@@ -85,12 +85,14 @@ export function getFoodReferenceAmount(profile?: HouseholdProfile) {
   return round100(p.adults * model.adult - Math.max(0, p.adults - 1) * (model.adult - model.secondAdult) + p.teens * model.teen + p.children * model.child + (p.pets || 0) * model.pet);
 }
 
-function compareFoodGuideline(referenceAmount: number, proposedAmount: number): FoodGuidelineComparison {
+function compareFoodGuideline(referenceAmount: number, proposedAmount: number, cashflowPrioritized = false): FoodGuidelineComparison {
   const difference = proposedAmount - referenceAmount;
   const differencePct = referenceAmount > 0 ? difference / referenceAmount : 0;
   const status: GuidelineStatus = differencePct < -0.15 ? 'below' : Math.abs(differencePct) <= 0.2 ? 'near' : differencePct <= 0.5 ? 'above' : 'far_above';
   const note = status === 'below'
-    ? 'Mat ligger under riktvärdet för hushållets storlek — det kan bli tajt.'
+    ? cashflowPrioritized
+      ? 'Mat ligger under riktvärdet för hushållets storlek. Förslaget prioriterar kassaflöde eftersom utrymmet efter måsten är lågt, så nivån behöver granskas manuellt.'
+      : 'Mat ligger under riktvärdet för hushållets storlek — det kan bli tajt.'
     : status === 'near'
       ? 'Mat ligger nära Konsumentverkets riktvärde för liknande hushåll.'
       : status === 'above'
@@ -133,6 +135,21 @@ export function redistributeExcessToSafety(excess: number, mode: BudgetSuggestio
   return { toMargin: round100(excess * marginShare), toSavings: Math.max(0, excess - round100(excess * marginShare)) };
 }
 
+function getTightBudgetTargets(available: number, caps: Record<string, CategoryCap>, foodReference: number, mode: BudgetSuggestionMode) {
+  const essentialGuidelineNeed = foodReference + caps['Transport rörligt'].recommendedMin + caps['Övrigt hushåll'].recommendedMin;
+  const tight = available < essentialGuidelineNeed + Math.max(600, available * 0.12);
+  const extremelyTight = available < essentialGuidelineNeed * 0.62;
+  if (!tight) return { tight, extremelyTight, marginMin: 0, savingsMin: 0, foodTarget: caps['Mat och hushåll'].recommendedTarget, funTarget: caps.Nöje.recommendedTarget };
+
+  const foodReferenceShare = mode === 'safe' ? 0.78 : mode === 'boost' ? 0.85 : 0.82;
+  const foodAvailableShare = mode === 'safe' ? 0.62 : mode === 'boost' ? 0.70 : 0.66;
+  const foodTarget = floor100(Math.min(foodReference * foodReferenceShare, available * foodAvailableShare));
+  const marginMin = extremelyTight ? 0 : Math.max(300, floor100(available * (mode === 'safe' ? 0.08 : 0.06)));
+  const savingsMin = extremelyTight ? 0 : Math.max(300, floor100(available * (mode === 'safe' ? 0.07 : 0.05)));
+  const funTarget = extremelyTight ? 0 : mode === 'boost' ? 500 : 300;
+  return { tight, extremelyTight, marginMin, savingsMin, foodTarget, funTarget };
+}
+
 export function suggestVariableBudget(input: {
   available: number;
   mode: BudgetSuggestionMode;
@@ -153,24 +170,26 @@ export function suggestVariableBudget(input: {
     balanced: { label: 'Balanserad budget' },
     boost: { label: 'Lite friare budget' },
   }[input.mode];
-  const lowSpace = available < caps['Mat och hushåll'].recommendedMin + caps['Transport rörligt'].recommendedMin + caps['Övrigt hushåll'].recommendedMin + 1000;
+  const foodReference = getFoodReferenceAmount(profile);
+  const tightTargets = getTightBudgetTargets(available, caps, foodReference, input.mode);
+  const lowSpace = tightTargets.tight || available < caps['Mat och hushåll'].recommendedMin + caps['Transport rörligt'].recommendedMin + caps['Övrigt hushåll'].recommendedMin + 1000;
   const amounts = [
-    caps['Mat och hushåll'].recommendedTarget,
-    caps['Transport rörligt'].recommendedTarget,
-    lowSpace ? caps.Nöje.recommendedMin : caps.Nöje.recommendedTarget,
-    caps['Övrigt hushåll'].recommendedTarget,
-    caps['Buffert/sparande'].recommendedTarget,
+    tightTargets.foodTarget,
+    tightTargets.tight ? caps['Transport rörligt'].recommendedMin : caps['Transport rörligt'].recommendedTarget,
+    tightTargets.tight ? tightTargets.funTarget : lowSpace ? caps.Nöje.recommendedMin : caps.Nöje.recommendedTarget,
+    tightTargets.tight ? caps['Övrigt hushåll'].recommendedMin : caps['Övrigt hushåll'].recommendedTarget,
+    tightTargets.tight ? tightTargets.savingsMin : caps['Buffert/sparande'].recommendedTarget,
   ];
-  let marginLeft = caps['Marginal kvar'].recommendedTarget;
+  let marginLeft = tightTargets.tight ? tightTargets.marginMin : caps['Marginal kvar'].recommendedTarget;
 
   while (amounts.reduce((s, a) => s + a, 0) + marginLeft > available) {
-    const order = [2, 4, 3, 1, 0];
-    const idx = order.find(i => amounts[i] > (i === 0 ? caps['Mat och hushåll'].recommendedMin : i === 1 ? caps['Transport rörligt'].recommendedMin : i === 3 ? caps['Övrigt hushåll'].recommendedMin : 0));
+    const order = tightTargets.tight ? [2, 3, 1, 0, 4] : [2, 4, 3, 1, 0];
+    const idx = order.find(i => amounts[i] > (tightTargets.tight && i === 4 ? tightTargets.savingsMin : i === 0 ? Math.min(caps['Mat och hushåll'].recommendedMin, tightTargets.foodTarget) : i === 1 ? caps['Transport rörligt'].recommendedMin : i === 3 ? caps['Övrigt hushåll'].recommendedMin : 0));
     if (idx === undefined) {
-      if (marginLeft > 0) marginLeft = Math.max(0, marginLeft - 100);
+      if (marginLeft > tightTargets.marginMin) marginLeft = Math.max(tightTargets.marginMin, marginLeft - 100);
       else break;
     } else {
-      const floor = idx === 0 ? caps['Mat och hushåll'].recommendedMin : idx === 1 ? caps['Transport rörligt'].recommendedMin : idx === 3 ? caps['Övrigt hushåll'].recommendedMin : 0;
+      const floor = tightTargets.tight && idx === 4 ? tightTargets.savingsMin : idx === 0 ? Math.min(caps['Mat och hushåll'].recommendedMin, tightTargets.foodTarget) : idx === 1 ? caps['Transport rörligt'].recommendedMin : idx === 3 ? caps['Övrigt hushåll'].recommendedMin : 0;
       amounts[idx] = Math.max(floor, amounts[idx] - 100);
     }
   }
@@ -192,9 +211,12 @@ export function suggestVariableBudget(input: {
   marginLeft = Math.max(0, available - planned);
   const safetyTotal = (items.find(item => item.label === 'Buffert/sparande')?.amount || 0) + marginLeft;
   const foodAmount = items.find(item => item.label === 'Mat och hushåll')?.amount || 0;
-  const guidelineComparison = { food: compareFoodGuideline(getFoodReferenceAmount(profile), foodAmount) };
+  const guidelineComparison = { food: compareFoodGuideline(foodReference, foodAmount, tightTargets.tight) };
   const capNote = clampedCategories.length ? ` ${clampedCategories.join(', ')} har begränsats till rimlighetstak.` : '';
   const overflowNote = overflowToSafety > 0 ? ` Extra utrymme (${overflowToSafety.toLocaleString('sv-SE')} kr) läggs på buffert/sparande och marginal i stället för att blåsa upp vardagskategorier.` : '';
-  const note = `${preset.label}: ${lowSpace ? 'utrymmet är lågt, så mat/hushåll prioriteras och nöje hålls lågt. ' : ''}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
+  const modeIntro = tightTargets.tight
+    ? 'Tajt budgetläge: utrymmet efter måsten är lågt jämfört med hushållets riktvärden. Förslaget prioriterar kassaflöde, håller mat och hushållsförbrukning under referensnivån, separerar övrigt hushåll från mat samt behöver granskas manuellt. '
+    : lowSpace ? 'utrymmet är lågt, så mat/hushåll prioriteras och nöje hålls lågt. ' : '';
+  const note = `${preset.label}: ${modeIntro}Hushåll: ${profile.adults} vuxna, ${profile.teens} tonåringar, ${profile.children} barn och ${profile.pets || 0} husdjur. Mat och hushåll avser främst matvaror och förbrukning; Övrigt hushåll är separat. Marginal kvar: cirka ${marginLeft.toLocaleString('sv-SE')} kr. Total trygghetsdel: cirka ${safetyTotal.toLocaleString('sv-SE')} kr.${capNote}${overflowNote}`;
   return { marginLeft, buffer: marginLeft, safetyTotal, note, categoryCaps: caps, clampedCategories, overflowToSafety, guidelineComparison, explanationNotes: [note, guidelineComparison.food.note, 'Siffrorna är deterministiskt beräknade i Klirr och OpenAI får bara formulera texten.'], items };
 }

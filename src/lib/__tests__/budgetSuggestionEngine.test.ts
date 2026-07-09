@@ -48,6 +48,19 @@ describe('budgetSuggestionEngine', () => {
     expect(result.note).toMatch(/lågt|tajt/i);
   });
 
+  it('uses tight budget mode for a 9900 kr family budget without letting food consume the plan', () => {
+    const result = suggestVariableBudget({ available: 9900, mode: 'safe', householdProfile: { adults: 2, children: 2, teens: 0, pets: 0, foodAmbition: 'normal', transportNeed: 'normal' } });
+
+    expect(amount(result, 'Mat och hushåll')).toBeLessThan(7000);
+    expect(amount(result, 'Mat och hushåll')).toBeLessThan(result.guidelineComparison.food.referenceAmount);
+    expect(amount(result, 'Buffert/sparande')).toBeGreaterThanOrEqual(500);
+    expect(result.marginLeft).toBeGreaterThanOrEqual(500);
+    expect(result.safetyTotal).toBeGreaterThanOrEqual(1200);
+    expect(result.items.reduce((sum, item) => sum + item.amount, 0) + result.marginLeft).toBeLessThanOrEqual(9900);
+    expect(result.note).toMatch(/Tajt budgetläge|prioriterar kassaflöde/i);
+    expect(result.guidelineComparison.food.note).toMatch(/prioriterar kassaflöde/i);
+  });
+
   it('returns guideline comparison and detects far above manual-style food amounts', () => {
     const result = suggestVariableBudget({ available: 90000, mode: 'balanced', householdProfile: { adults: 2, children: 2, teens: 0, foodAmbition: 'normal', transportNeed: 'normal' } });
 
