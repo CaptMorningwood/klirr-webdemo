@@ -36,6 +36,13 @@ Klirr är inte främst:
 
 If a proposed feature fails these questions, it probably does not belong in Klirr or needs reframing.
 
+
+## Onboarding är en guide, inte ett krav
+
+Användaren kan alltid hoppa in i Klirr på sitt sätt: bygga första Budgeten steg för steg, utforska själv eller importera en Budget. Onboarding ska kunna hoppas över, pausas, återupptas och byta riktning utan att låsa appen. Alla kärnfunktioner ska vara tillgängliga även när setup är ofullständig.
+
+Klirr ska aldrig straffa, skamma eller skuldbelägga en ofullständig Budget. Kopian ska hjälpa användaren bygga klart Budgeten i sin egen takt och påminna om att Budget Buddy kan hjälpa när användaren vill.
+
 ## Budget First language
 
 Preferred:

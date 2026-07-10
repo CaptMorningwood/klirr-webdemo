@@ -1,19 +1,23 @@
 import type { AppState, DetectionResult, HouseholdProfile, Income, ManualExpense, VariablePlanItem } from '../types';
 import { detectPossibleIncomeDuplicates } from './incomeReconciliation';
 
-export type OnboardingPath = 'manual' | 'import';
+export type OnboardingPath = 'manual' | 'import' | 'explore';
+export type OnboardingStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'SKIPPED' | 'IMPORT_PATH' | 'MANUAL_PATH' | 'COMPLETED';
 export type OnboardingStep = 'start' | 'household' | 'income' | 'musts' | 'variablePlan' | 'import' | 'importReview' | 'confirmImport' | 'buddyCheckup' | 'summary' | 'finish';
 
 export interface OnboardingState {
+  status: OnboardingStatus;
   path?: OnboardingPath;
   currentStep: OnboardingStep;
   started: boolean;
   importCompleted: boolean;
   reviewCompleted: boolean;
   firstRunGuideDismissed?: boolean;
+  skippedBuddyIntroShown?: boolean;
 }
 
 export const defaultOnboardingState: OnboardingState = {
+  status: 'NOT_STARTED',
   currentStep: 'start',
   started: false,
   importCompleted: false,
@@ -24,8 +28,23 @@ export const defaultOnboardingState: OnboardingState = {
 export const manualSteps: OnboardingStep[] = ['start', 'household', 'income', 'musts', 'variablePlan', 'summary', 'finish'];
 export const importSteps: OnboardingStep[] = ['start', 'household', 'import', 'importReview', 'confirmImport', 'buddyCheckup', 'summary', 'finish'];
 
-export function normalizeOnboardingState(state?: Partial<OnboardingState>): OnboardingState {
-  return { ...defaultOnboardingState, ...(state || {}) };
+export function normalizeOnboardingState(state?: Partial<OnboardingState>, onboardingCompleted = false): OnboardingState {
+  const merged = { ...defaultOnboardingState, ...(state || {}) };
+  if (onboardingCompleted) return { ...merged, status: 'COMPLETED', currentStep: merged.currentStep === 'start' ? 'finish' : merged.currentStep };
+  if (!state) return merged;
+  if (!merged.status || merged.status === 'NOT_STARTED') {
+    if (merged.path === 'import' && merged.started) return { ...merged, status: 'IMPORT_PATH' };
+    if (merged.path === 'manual' && merged.started) return { ...merged, status: merged.currentStep === 'start' ? 'IN_PROGRESS' : 'MANUAL_PATH' };
+  }
+  return merged;
+}
+
+export function migrateOnboardingState(input: { onboarding?: Partial<OnboardingState>; onboardingCompleted?: boolean }): OnboardingState {
+  return normalizeOnboardingState(input.onboarding, input.onboardingCompleted);
+}
+
+export function shouldShowForcedWelcome(onboarding?: Partial<OnboardingState>, onboardingCompleted = false) {
+  return normalizeOnboardingState(onboarding, onboardingCompleted).status === 'NOT_STARTED';
 }
 
 export function getOnboardingStepNumber(onboarding?: Partial<OnboardingState>) {
