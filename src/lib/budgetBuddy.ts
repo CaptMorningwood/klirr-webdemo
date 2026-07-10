@@ -17,6 +17,10 @@ export interface BuddyContext {
   recurringCandidateCountsByType?: Record<string, number>;
   knowledgeBaseCategories?: string[];
   transferCandidateCount?: number;
+  onboardingStatus?: string;
+  onboardingPath?: string;
+  budgetCompletionPercentage?: number;
+  missingSetupItems?: string[];
 }
 
 export function initialBuddyMessage(): ChatMessage {
@@ -93,6 +97,10 @@ export const buddySuggestions = [
   'Vad kan jag kapa?',
   'Vad är oklart?',
   'Gör krisbudget',
+  'Lägg till inkomst',
+  'Lägg till Måsten',
+  'Importera kontoutdrag',
+  'Skapa Rörlig Budget',
   'Hur importerar jag kontoutdrag?',
   'Hur ändrar jag konton?',
 ];

@@ -67,3 +67,30 @@ describe('onboarding validation warnings and summary', () => {
     expect(budgetBuddyCheckupMessage).toMatch(/Budget Buddy Checkup/);
   });
 });
+
+describe('flexible onboarding lifecycle migration', () => {
+  it('new user starts as NOT_STARTED', () => {
+    expect(normalizeOnboardingState().status).toBe('NOT_STARTED');
+  });
+
+  it('manual selection maps to MANUAL_PATH and preserves incomplete state', () => {
+    const state = normalizeOnboardingState({ path: 'manual', started: true, currentStep: 'income' });
+    expect(state.status).toBe('MANUAL_PATH');
+    expect(state.currentStep).toBe('income');
+  });
+
+  it('import selection maps to IMPORT_PATH', () => {
+    const state = normalizeOnboardingState({ path: 'import', started: true, currentStep: 'import' });
+    expect(state.status).toBe('IMPORT_PATH');
+  });
+
+  it('completed legacy users migrate to COMPLETED', () => {
+    const state = normalizeOnboardingState({ path: 'manual', started: true, currentStep: 'summary' }, true);
+    expect(state.status).toBe('COMPLETED');
+  });
+
+  it('skipped users do not get forced back into onboarding', () => {
+    const state = normalizeOnboardingState({ status: 'SKIPPED', path: 'explore', started: true });
+    expect(state.status).toBe('SKIPPED');
+  });
+});
