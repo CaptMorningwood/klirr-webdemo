@@ -250,6 +250,9 @@ export interface BuddyActionHistoryEntry {
   reason?: string;
   createdAt: string;
   undoSnapshot?: Partial<Pick<AppState, 'incomes' | 'variablePlan' | 'rules' | 'recurringDecisions' | 'scenarioOff'>>;
+  previousBudgetHealthScore?: number;
+  newBudgetHealthScore?: number;
+  budgetHealthReasons?: string[];
 }
 
 export interface BuddySession {
