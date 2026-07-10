@@ -1,3 +1,4 @@
+import type { OnboardingState } from './lib/onboarding';
 export type CostType = 'fixed' | 'variable' | 'transfer' | 'income' | 'excluded';
 export type Frequency = 'monthly' | 'quarterly' | 'yearly' | 'irregular';
 export type DecisionStatus = 'pending' | 'confirmed' | 'rejected';
@@ -275,6 +276,7 @@ export interface AppState {
   buddyActionHistory?: BuddyActionHistoryEntry[];
   buddySession?: BuddySession;
   onboardingCompleted: boolean;
+  onboarding?: OnboardingState;
   householdProfile?: HouseholdProfile;
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStatus?: SubscriptionStatus;
