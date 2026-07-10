@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
@@ -413,8 +413,9 @@ function MoreView({ active, setActive, state, setState, onReset, loadDemo, openO
 function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, setScenarioOff, autoMessage, onAutoMessageHandled }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void; autoMessage?: string; onAutoMessageHandled?: () => void }) {
   const [draft, setDraft] = useState('');
   const [buddyBusy, setBuddyBusy] = useState(false);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(() => state.chatMessages.filter(m => m.role === 'user').length === 0);
-  const suggestionsId = useId();
+  const [composerComposing, setComposerComposing] = useState(false);
+  const [desktopSuggestionsOpen, setDesktopSuggestionsOpen] = useState(() => state.chatMessages.filter(m => m.role === 'user').length === 0);
+  const desktopSuggestionsId = useId();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const userMessageCount = state.chatMessages.filter(m => m.role === 'user').length;
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [state.chatMessages]);
@@ -427,7 +428,7 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       setState({ ...state, onboarding: { ...ob, skippedBuddyIntroShown: true }, chatMessages: [...state.chatMessages, intro] });
     }
   }, []);
-  useEffect(() => { if (userMessageCount > 0) setSuggestionsOpen(false); }, [userMessageCount]);
+  useEffect(() => { if (userMessageCount > 0) setDesktopSuggestionsOpen(false); }, [userMessageCount]);
   useEffect(() => { if (autoMessage && !buddyBusy) { onAutoMessageHandled?.(); void send(autoMessage); } }, [autoMessage, buddyBusy]);
 
   function updateActionStatus(actionId: string, status: BuddyProposedAction['status'], baseState = state) {
@@ -492,11 +493,16 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
   }
   function undoLast() { const result = undoLastBuddyAction(state); setState({ ...result.state, chatMessages: [...result.state.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: result.message }] }); }
   function handleSuggestion(suggestion: string) {
-    setSuggestionsOpen(false);
+    setDesktopSuggestionsOpen(false);
     void send(suggestion);
   }
+  function handleComposerSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (composerComposing) return;
+    void send(draft);
+  }
   function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.nativeEvent.isComposing || e.shiftKey || e.key !== 'Enter') return;
+    if (composerComposing || e.nativeEvent.isComposing || e.shiftKey || e.key !== 'Enter') return;
     if (window.matchMedia('(pointer: coarse)').matches) return;
     e.preventDefault();
     void send(draft);
@@ -523,22 +529,23 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     if (action.type === 'create_scenario' || action.type === 'apply_scenario_off_ids') return <div className="stack">{preview}<p className="hint">Scenario: {action.payload.label || action.payload.scenarioOffIds.join(', ')}</p></div>;
     return <div className="stack">{preview}<p className="hint">Ingen direkt ändring görs utan bekräftelse.</p></div>;
   }
+  const showStarterSuggestions = userMessageCount === 0;
   return <Card className="chat-shell">
-    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '5px 0 0', color: 'var(--muted)' }}>Din varma Budget-kompis i Klirr. Jag kan föreslå ändringar, men inget ändras förrän du säger ja.</p></div>
-    <div className="chat-messages" ref={scrollRef} aria-live="polite" aria-relevant="additions">
-      {state.chatMessages.map(m => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box action-card"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row action-card-controls"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className={`pill ${m.proposedAction.status === 'applied' ? 'green' : m.proposedAction.status === 'cancelled' ? 'danger' : 'warn'}`} aria-live="polite">{m.proposedAction.status === 'pending' ? 'Föreslagen · inte ändrad än' : m.proposedAction.status === 'applied' ? 'Applicerad · Budgeten ändrad' : m.proposedAction.status === 'cancelled' ? 'Avbruten · inget ändrat' : m.proposedAction.status}</span></div></div>}{m.content.toLowerCase().includes('ångra') && <div className="message-actions"><button className="btn small" onClick={undoLast}>Ångra senaste</button></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
+    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div>
+    <div className="chat-messages" ref={scrollRef}>
+      {state.chatMessages.map((m, index) => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{showStarterSuggestions && index === state.chatMessages.length - 1 && m.role === 'assistant' && <div className="inline-suggestions" aria-label="Förslag på vad du kan fråga">{buddySuggestions.map(s => <button key={s} className="suggestion-chip" type="button" onClick={() => handleSuggestion(s)}>{s}</button>)}</div>}{m.proposedAction && <div className="suggestion-box action-card"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row action-card-controls"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className={`pill ${m.proposedAction.status === 'applied' ? 'green' : m.proposedAction.status === 'cancelled' ? 'danger' : 'warn'}`} aria-live="polite">{m.proposedAction.status === 'pending' ? 'Föreslagen · inte ändrad än' : m.proposedAction.status === 'applied' ? 'Applicerad · Budgeten ändrad' : m.proposedAction.status === 'cancelled' ? 'Avbruten · inget ändrat' : m.proposedAction.status}</span></div></div>}{m.content.toLowerCase().includes('ångra') && <div className="message-actions"><button className="btn small" onClick={undoLast}>Ångra senaste</button></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div className="chat-footer">
-      <form className="chat-input" onSubmit={e => { e.preventDefault(); void send(draft); }}><textarea className="textarea" rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={handleComposerKeyDown} placeholder="Fråga om din Budget…" /><button className="btn primary send-button" type="submit" disabled={buddyBusy || !draft.trim()} aria-label="Skicka meddelande"><span className="send-button-label">{buddyBusy ? 'Tänker…' : 'Skicka'}</span><span className="send-button-icon" aria-hidden="true">➤</span></button></form>
+      <form className="chat-input" onSubmit={handleComposerSubmit}><textarea className="textarea" rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={handleComposerKeyDown} onCompositionStart={() => setComposerComposing(true)} onCompositionEnd={() => setComposerComposing(false)} placeholder="Fråga om din Budget…" /><button className="btn primary send-button" type="submit" disabled={buddyBusy || !draft.trim()} aria-label="Skicka meddelande"><span className="send-button-label">{buddyBusy ? 'Tänker…' : 'Skicka'}</span><span className="send-button-icon" aria-hidden="true">➤</span></button></form>
       {buddyBusy && <p className="thinking-note" role="status">Budget Buddy tänker…</p>}
-      <section className="buddy-suggestions" aria-label="Förslag på vad du kan fråga">
-        <button className="btn small ghost suggestions-toggle" type="button" aria-expanded={suggestionsOpen} aria-controls={suggestionsId} onClick={() => setSuggestionsOpen(open => !open)}>{suggestionsOpen ? 'Dölj förslag' : 'Visa förslag'}</button>
-        <div id={suggestionsId} className={`suggestions-panel ${suggestionsOpen ? 'open' : ''}`} hidden={!suggestionsOpen}>
-          <h3>Förslag på vad du kan fråga</h3>
-          <div className="suggestions-list">{buddySuggestions.map(s => <button key={s} className="suggestion-row" type="button" onClick={() => handleSuggestion(s)}><span className="suggestion-icon" aria-hidden="true">✨</span><span><b>{s}</b><small>Budget, marginal och återkommande poster</small></span><span aria-hidden="true">›</span></button>)}</div>
-        </div>
-      </section>
     </div>
+    <section className="buddy-suggestions desktop-buddy-suggestions" aria-label="Förslag på vad du kan fråga">
+      <button className="btn small ghost suggestions-toggle" type="button" aria-expanded={desktopSuggestionsOpen} aria-controls={desktopSuggestionsId} onClick={() => setDesktopSuggestionsOpen(open => !open)}>{desktopSuggestionsOpen ? 'Dölj förslag' : 'Visa förslag'}</button>
+      <div id={desktopSuggestionsId} className={`suggestions-panel ${desktopSuggestionsOpen ? 'open' : ''}`} hidden={!desktopSuggestionsOpen}>
+        <h3>Förslag på vad du kan fråga</h3>
+        <div className="suggestions-list">{buddySuggestions.map(s => <button key={s} className="suggestion-row" type="button" onClick={() => handleSuggestion(s)}><span className="suggestion-icon" aria-hidden="true">✨</span><span><b>{s}</b><small>Budget, marginal och återkommande poster</small></span><span aria-hidden="true">›</span></button>)}</div>
+      </div>
+    </section>
   </Card>;
 }
 
