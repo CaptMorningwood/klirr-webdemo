@@ -14,7 +14,7 @@ export function appendBuddyActionHistory(state: AppState, entry: Omit<BuddyActio
 
 export function applyBuddyActionWithResult(state: AppState, action: BuddyProposedAction): BuddyActionApplyResult {
   if (action.type === 'choose_income_to_update') {
-    return { state, status: 'needs_choice', message: 'Jag behöver veta vilken inkomst som ska uppdateras innan jag ändrar något.' };
+    return { state, status: 'needs_choice', message: 'Jag behöver veta vilken inkomst som ska uppdateras innan jag ändrar Budgeten.' };
   }
   if (action.type === 'update_income') {
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { incomes: state.incomes } });
@@ -26,18 +26,18 @@ export function applyBuddyActionWithResult(state: AppState, action: BuddyPropose
     if (replaceMode === 'update_existing') {
       if (incomeId && state.incomes.some(income => income.id === incomeId)) {
         const next = { ...state, incomes: state.incomes.map(income => income.id === incomeId ? { ...income, ...payload } : income) };
-        return { state: next, status: 'applied', message: `Klart — jag uppdaterade “${payload.label}” till cirka ${amount.toLocaleString('sv-SE')} kr/mån ✅ Vill du ångra?` };
+        return { state: next, status: 'applied', message: `Klart! Inkomsten är uppdaterad ✅ Din Budget har nu bättre underlag och marginalen räknas om. Vill du ångra?` };
       }
       if (!incomeId && state.incomes.length === 1) {
         const label = payload.label || state.incomes[0].label;
         const next = { ...state, incomes: [{ ...state.incomes[0], ...payload, label }] };
-        return { state: next, status: 'applied', message: `Klart — jag uppdaterade “${label}” till cirka ${amount.toLocaleString('sv-SE')} kr/mån ✅ Vill du ångra?` };
+        return { state: next, status: 'applied', message: `Klart! Inkomsten är uppdaterad ✅ Din Budget har nu bättre underlag och marginalen räknas om. Vill du ångra?` };
       }
       return { state, status: state.incomes.length > 1 ? 'needs_choice' : 'failed', message: 'Jag behöver veta vilken inkomst som ska bytas ut, så jag skapade ingen dubblett.' };
     }
     if (replaceMode === 'add_new') {
       const next = { ...state, incomes: [...state.incomes, { id: uid('inc'), ...payload }] };
-      return { state: next, status: 'applied', message: `Klart — jag lade till “${payload.label}” på cirka ${amount.toLocaleString('sv-SE')} kr/mån ✅ Vill du ångra?` };
+      return { state: next, status: 'applied', message: `Klart! Inkomsten är tillagd ✅ Din Budget har nu större återkommande inkomst att räkna med. Vill du ångra?` };
     }
     return { state, status: 'failed', message: 'Action saknade replaceMode och kunde inte appliceras säkert.' };
   }
@@ -65,41 +65,41 @@ export function applyBuddyActionWithResult(state: AppState, action: BuddyPropose
         items = items.map(item => item.include ? { ...item, amount: Math.floor((item.amount * scale) / 100) * 100 } : item);
       }
     }
-    return { state: { ...state, variablePlan: items }, status: 'applied', message: 'Klart — jag uppdaterade den rörliga planen ✅ Vill du ångra?' };
+    return { state: { ...state, variablePlan: items }, status: 'applied', message: 'Klart! Den rörliga Budgeten är uppdaterad ✅ Budgeten blir mer balanserad och marginalen räknas om. Vill du ångra?' };
   }
 
   if (action.type === 'create_rule') {
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { rules: state.rules } });
     const next = { ...state, rules: [...state.rules, { id: uid('rule'), ...action.payload }] };
-    return { state: next, status: 'applied', message: 'Klart — jag skapade regeln ✅ Vill du ångra?' };
+    return { state: next, status: 'applied', message: 'Klart! Regeln är skapad ✅ Budgeten blir tydligare när posten tolkas likadant framåt. Vill du ångra?' };
   }
   if (action.type === 'move_recurring_item') {
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { recurringDecisions: state.recurringDecisions } });
     const current = state.recurringDecisions[action.payload.recurringId];
     const next = { ...state, recurringDecisions: { ...state.recurringDecisions, [action.payload.recurringId]: { ...current, status: 'confirmed' as const, costType: action.payload.to === 'fixed' || action.payload.to === 'variable' || action.payload.to === 'income' ? action.payload.to : current?.costType, category: action.payload.category || current?.category } } };
-    return { state: next, status: 'applied', message: 'Klart — jag flyttade posten ✅ Vill du ångra?' };
+    return { state: next, status: 'applied', message: 'Klart! Posten räknas nu på rätt plats i Budgeten. Det gör Budgeten mer realistisk. ✨ Vill du ångra?' };
   }
   if (action.type === 'reject_recurring_item') {
     const recurringId = action.payload.recurringId;
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { recurringDecisions: state.recurringDecisions } });
     const current = state.recurringDecisions[recurringId];
     const next = { ...state, recurringDecisions: { ...state.recurringDecisions, [recurringId]: { ...current, status: 'rejected' as const, costType: current?.costType || 'fixed' as const } } };
-    return { state: next, status: 'applied', message: 'Klart — jag räknade bort posten i budgeten ✅ Vill du ångra?' };
+    return { state: next, status: 'applied', message: 'Klart! Posten räknas inte längre i Budgeten ✅ Budgeten är nu tydligare och mer tillförlitlig. Vill du ångra?' };
   }
   if (action.type === 'fix_duplicate_income') {
     const recurringId = action.payload.incomeId;
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { recurringDecisions: state.recurringDecisions } });
     const current = state.recurringDecisions[recurringId];
     const next = { ...state, recurringDecisions: { ...state.recurringDecisions, [recurringId]: { ...current, status: 'rejected' as const, costType: current?.costType || 'income' as const } } };
-    return { state: next, status: 'applied', message: 'Klart — jag räknade bort posten i budgeten ✅ Vill du ångra?' };
+    return { state: next, status: 'applied', message: 'Klart! Posten räknas inte längre i Budgeten ✅ Budgeten är nu tydligare och mer tillförlitlig. Vill du ångra?' };
   }
   if (action.type === 'create_scenario' || action.type === 'apply_scenario_off_ids') {
     state = appendBuddyActionHistory(state, { actionId: action.id, actionType: action.type, type: 'rendered', message: 'undo-snapshot', undoSnapshot: { scenarioOff: state.scenarioOff } });
-    return { state: { ...state, scenarioOff: action.payload.scenarioOffIds }, status: 'applied', message: 'Klart — jag visar scenariot ✅ Vill du ångra?' };
+    return { state: { ...state, scenarioOff: action.payload.scenarioOffIds }, status: 'applied', message: 'Klart! Scenariot visar hur Budgeten påverkas utan att ändra originalet ✅ Vill du ångra?' };
   }
-  if (action.type === 'run_budget_checkup') return { state, status: 'applied', message: 'Jag visar checklistan här ovanför — inget i budgeten ändrades ✅' };
+  if (action.type === 'run_budget_checkup') return { state, status: 'applied', message: 'Checkupen är klar 💡 Jag hittade saker som kan göra Budgeten mer hållbar. Inget i Budgeten ändrades.' };
 
-  return { state, status: 'failed', message: 'Okänd Budget Buddy-action.' };
+  return { state, status: 'failed', message: 'Okänd Budget Buddy-action. Jag ändrade inte Budgeten.' };
 }
 
 export function applyBuddyAction(state: AppState, action: BuddyProposedAction): AppState {
