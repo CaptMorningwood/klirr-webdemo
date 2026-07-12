@@ -274,3 +274,22 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
   .chat-footer { margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; }
   .chat-header p { font-size: 12.5px; }
 }
+
+.home-hero { margin-bottom: 14px; }
+.home-list { display: grid; gap: 8px; }
+.home-row { border: 1px solid rgba(234,223,255,.95); border-radius: 20px; background: rgba(255,255,255,.62); overflow: hidden; }
+.home-row-button { width: 100%; border: 0; background: transparent; color: var(--ink); cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 13px 14px; text-align: left; }
+.home-row-button:hover { background: rgba(124,60,255,.07); }
+.home-row-title { min-width: 0; font-weight: 900; display: flex; flex-direction: column; gap: 3px; }
+.home-row-title small { color: var(--muted); font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+.home-row-value { font-weight: 900; white-space: nowrap; }
+.home-chevron { color: var(--muted); font-weight: 900; transition: transform .15s ease; }
+.home-row-button[aria-expanded="true"] .home-chevron { transform: rotate(180deg); }
+.home-row-panel { border-top: 1px solid var(--border); padding: 14px; background: rgba(255,255,255,.78); }
+.home-warning-dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: var(--warn-soft); color: #7a4e10; border: 1px solid rgba(184,121,30,.28); font-size: 12px; margin-bottom: 2px; }
+@media (max-width: 860px) {
+  .home-row-button { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .home-row-value { grid-column: 1 / -1; justify-self: start; font-size: 18px; }
+  .home-chevron { grid-column: 2; grid-row: 1; }
+  .home-row-panel { overflow-wrap: anywhere; }
+}
