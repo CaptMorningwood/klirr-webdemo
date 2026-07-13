@@ -93,3 +93,11 @@ Hemvyn ska ge en lugn överblick över Budgeten. Förklaringar och nästa steg v
 Budgethälsa ska alltid vara transparent, förklarbar och handlingsbar.
 
 Budgethälsa mäter Budgetens hållbarhet — aldrig användarens värde eller rikedom.
+
+## Visuella översikter
+
+Visualiseringar i Klirr ska förklara Budgeten snabbare, aldrig bara dekorera.
+
+Varje översiktsrad får högst en kompakt visualisering.
+
+Text och belopp är alltid primära. Visualiseringar är ett stöd.
