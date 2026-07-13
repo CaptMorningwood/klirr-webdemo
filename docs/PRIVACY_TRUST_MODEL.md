@@ -13,3 +13,6 @@ Klirr ska låta användaren förstå, exportera och radera sin data. Modellen ä
 - Non-goals: ingen compliance-certifiering, ingen cookie banner utan tracking, ingen falsk cloud/account deletion.
 
 - Premium 2.0: lokal förbättringsplan, utvecklingssnapshots och lokal monitorering kan köras utan AI; Budget Buddy+ följer samma AI-samtycke och sammanfattade kontextgräns som Budget Buddy.
+
+
+> Current product note: Klirr has no active paid tier. Legacy experiment data may remain in storage/export as archived or future-feature data, and all Budget Buddy AI uses the same summarized Privacy boundary.

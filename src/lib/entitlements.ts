@@ -25,9 +25,12 @@ export const freeEntitlements: Entitlements = {
   versionHistory: false,
 };
 
-export const premiumEntitlements: Entitlements = Object.fromEntries(
-  Object.keys(freeEntitlements).map(key => [key, true]),
-) as unknown as Entitlements;
+export const premiumEntitlements: Entitlements = {
+  ...freeEntitlements,
+  // Legacy/future subscription metadata must not re-enable paused Premium UI.
+  budgetBuddyAdvanced: true,
+  deepAnalysis: true,
+};
 
 export function isPremiumPlan(plan: SubscriptionPlan = 'free', status: SubscriptionStatus = 'inactive'): boolean {
   return plan === 'pro' && (status === 'active' || status === 'trialing');

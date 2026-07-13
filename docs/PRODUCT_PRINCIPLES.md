@@ -102,19 +102,16 @@ Varje översiktsrad får högst en kompakt visualisering.
 
 Text och belopp är alltid primära. Visualiseringar är ett stöd.
 
-## Premium och Gratis
+## PAUSED / FUTURE EXPLORATION: Premium
 
-Klirrs kärna ska vara komplett gratis. Premium sparar tid och hjälper användaren att förbättra Budgeten, följa resultatet och låta Klirr hålla koll.
+Se `docs/FUTURE_PREMIUM.md` för nuvarande beslut.
 
-Premium får aldrig låsa användarens möjlighet att förstå eller underhålla sin Budget.
+Klirr ska inte låsa funktioner bakom betalning innan Premium skapar ett tydligt, moget och återkommande användarvärde.
 
-## Privacy & Trust
+Hela Budget Buddy är en del av Klirrs nuvarande kärnprodukt.
 
-Användaren ska kunna förstå, exportera och radera sin data.
+AI-samtycke styr externa AI-anrop, inte tillgången till Budget Buddy.
 
-Den manuella Budgeten ska fungera utan AI.
+## Arkiverade betalprinciper
 
-Budget Buddy ska visa vilken sammanfattad kontext AI har fått.
-
-Klirr ska inte göra påståenden om säkerhet, region, kryptering eller regelefterlevnad som inte stöds av faktisk implementation.
-
+Tidigare betalprinciper är pausade och ersatta av beslutet ovan. Se `docs/FUTURE_PREMIUM.md`.

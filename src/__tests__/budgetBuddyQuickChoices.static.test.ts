@@ -5,8 +5,8 @@ import buddy from '../lib/budgetBuddy.ts?raw';
 describe('Budget Buddy quick choices', () => {
   it('uses a central typed suggestion list with the new terminology', () => {
     expect(buddy).toContain('export const buddySuggestionItems');
-    expect(buddy).toContain("label: 'Ändra fasta utgifter'");
-    expect(buddy).toContain("label: 'Ändra rörliga utgifter'");
+    expect(buddy).toContain("label: 'Hjälp mig justera inkomsten'");
+    expect(buddy).toContain("label: 'Föreslå rörliga utgifter'");
   });
 
   it('renders suggestions behind a compact accessible trigger instead of inline chips', () => {

@@ -13,3 +13,6 @@ Kör på desktop och 320/360/375/390/414/430 px.
 9. Öppna juridiska utkast och kontrollera placeholders.
 10. Bekräfta ingen cookie banner och att analytics/marketing inte har aktiv toggle.
 11. Växla Free/Premium demo om tillgängligt och kontrollera att samtycken inte ändras.
+
+
+> Current product note: Klirr has no active paid tier. Legacy experiment data may remain in storage/export as archived or future-feature data, and all Budget Buddy AI uses the same summarized Privacy boundary.
