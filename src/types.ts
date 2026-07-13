@@ -5,6 +5,7 @@ export type DecisionStatus = 'pending' | 'confirmed' | 'rejected';
 export type TabId =
   | 'dashboard'
   | 'buddy'
+  | 'premium'
   | 'plan'
   | 'importReview'
   | 'more'
@@ -239,6 +240,10 @@ export interface Entitlements {
   scenarios: boolean;
   export: boolean;
   cloudSync: boolean;
+  premiumHub: boolean;
+  improvementPlan: boolean;
+  developmentTracking: boolean;
+  smartMonitoring: boolean;
   budgetBuddyAdvanced: boolean;
   deepAnalysis: boolean;
   proactiveInsights: boolean;
@@ -249,6 +254,91 @@ export interface Entitlements {
   multipleBudgets: boolean;
   sharedBudget: boolean;
   versionHistory: boolean;
+}
+
+export interface PremiumGoal {
+  id: string;
+  workspaceId: string;
+  title: string;
+  reason: string;
+  targetType: 'margin_ratio' | 'buffer' | 'fixed_share' | 'review_done' | 'budget_health';
+  targetValue: number;
+  currentValue: number;
+  status: 'active' | 'completed' | 'paused';
+  createdAt: string;
+  nextStep?: string;
+  destination?: TabId;
+}
+
+export interface PremiumSnapshot {
+  id: string;
+  workspaceId: string;
+  createdAt: string;
+  totalIncome: number;
+  fixedTotal: number;
+  variablePlanTotal: number;
+  remainingAfterPlan: number;
+  budgetHealthScore: number;
+  note?: string;
+}
+
+export interface PremiumMonitoringState {
+  enabled: boolean;
+  lastRunAt?: string;
+  nextRunHint?: string;
+  dismissedFingerprints?: string[];
+}
+
+export interface PremiumActivationState {
+  firstActivatedAt?: string;
+  onboardingShown: boolean;
+  dismissedAt?: string;
+}
+
+export interface PremiumImprovementOpportunity {
+  id: string;
+  type: string;
+  title: string;
+  explanation: string;
+  priority: number;
+  sourceReasonIds: string[];
+  destination: TabId;
+  relevantBudgetArea: string;
+  estimatedMarginImpact: number;
+  estimatedBudgetHealthImpact: number;
+  confidence: 'low' | 'medium' | 'high';
+  estimationNote: string;
+  suggestedAction: string;
+  suggestedBuddyMessage?: string;
+}
+
+export interface PremiumPlanAlternative {
+  id: string;
+  mode: 'safe' | 'balanced' | 'ambitious';
+  label: string;
+  summary: string;
+  opportunities: string[];
+  estimatedMargin: number;
+  estimatedHealthDirection: string;
+  tradeoffs: string[];
+  affectedCategories: string[];
+}
+
+export interface PremiumValueSummary {
+  opportunityCount: number;
+  estimatedMonthlyMarginPotential: number;
+  estimatedBudgetHealthPotential: number;
+  topOpportunity?: PremiumImprovementOpportunity;
+  reviewAreaCount: number;
+  suggestedFirstGoal: string;
+  currentGoalSummary: string;
+  developmentSummary: string;
+  monitoringSummary: string;
+  strongestPositiveChange?: string;
+  strongestNegativeChange?: string;
+  opportunities: PremiumImprovementOpportunity[];
+  alternatives: PremiumPlanAlternative[];
+  basedOnMetricsHash: string;
 }
 
 export interface BuddyActionHistoryEntry {
@@ -274,6 +364,39 @@ export interface BuddySession {
   lastDiscussedPlan?: Array<{ label: string; amount: number; category?: string }>;
 }
 
+export type ConsentDocumentType = 'privacy_policy' | 'terms' | 'ai_features' | 'analytics' | 'marketing';
+export type ConsentStatus = 'accepted' | 'declined' | 'withdrawn';
+export interface ConsentRecord {
+  id: string;
+  type: ConsentDocumentType;
+  documentVersion: string;
+  status: ConsentStatus;
+  decidedAt: string;
+  source: 'onboarding' | 'settings' | 'migration';
+  locale?: string;
+}
+export interface PrivacyPreferences {
+  aiEnabled: boolean;
+  optionalAnalyticsEnabled: boolean;
+  marketingEnabled: boolean;
+  privacyCenterSeenAt?: string;
+  lastExportAt?: string;
+}
+export interface AIContextLogEntry {
+  id: string;
+  createdAt: string;
+  purpose: string;
+  requestType: string;
+  workspaceId?: string;
+  summaryFields: Record<string, unknown>;
+  warningsIncluded: string[];
+  dataCategories: string[];
+  containsRawTransactions: false;
+  destinationLabel: string;
+  retentionExpiresAt?: string;
+  outcome: 'prepared' | 'sent' | 'blocked' | 'failed';
+  failureReason?: string;
+}
 
 export interface BudgetMetricSnapshot {
   id: string;
@@ -387,6 +510,14 @@ export interface AppState {
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStatus?: SubscriptionStatus;
   entitlements?: Entitlements;
+  activeWorkspaceId?: string;
+  premiumGoals?: PremiumGoal[];
+  premiumSnapshots?: PremiumSnapshot[];
+  premiumMonitoring?: PremiumMonitoringState;
+  premiumActivation?: PremiumActivationState;
+  privacyPreferences?: PrivacyPreferences;
+  consentRecords?: ConsentRecord[];
+  aiContextLog?: AIContextLogEntry[];
   activeBudgetId?: string;
   workspaces?: BudgetWorkspaceMetadata[];
   workspaceData?: Record<string, BudgetWorkspaceData>;

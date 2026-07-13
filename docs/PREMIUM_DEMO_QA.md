@@ -3,14 +3,21 @@
 Use this checklist on mobile (320–430px) and desktop.
 
 1. Fresh Gratis user: clear local storage, load app, confirm Gratis indicator and complete Budget core works.
-2. Fresh Premium user: activate Premium in Settings; confirm no payment is implied.
-3. Toggle Gratis → Premium → Gratis; confirm Budget data, Premium data, and active workspace are preserved.
-4. Open every locked preview in Gratis: Premium overview, Budget development, goals, reminders, deep analysis, automatic review, workspaces, shared Budget, versions, and Budget Buddy+ choices.
-5. Premium features: create a history snapshot, goal, reminder, automatic re-review result, second Budget, simulated member, and version.
-6. Multiple workspaces: switch between two Budgets and verify income/expenses do not mix.
-7. Restore: create a version, change Budget data, restore, and verify a safety version is created and plan is unchanged.
-8. Budget Buddy safety: advanced prompts use summarized context only; proposed Budget changes still require confirmation.
-9. Migration: load a legacy export without workspaces/premium fields and confirm it becomes “Min Budget”.
-10. Cloud snapshot: save/load a snapshot and verify stale entitlements are recalculated locally and basic sync remains free.
-11. Data preservation: downgrade to Gratis and verify goals/reminders/history/workspaces/versions remain visible as locked or preserved previews.
-12. Accessibility: keyboard-operate the plan switch and workspace controls; progress and locked states have text explanations.
+2. Open Premium and confirm personalized Premium 2.0 preview: three pillars, opportunities, conservative estimated impact and first goal.
+3. Activate Premium in the demo and verify no payment is implied.
+4. Confirm the first activation experience “Premium är redo”.
+5. Open “Min förbättringsplan” and verify max three priorities, estimation notes and Trygg / Balanserad / Mer offensiv alternatives.
+6. Prepare action cards via Buddy+ and verify nothing changes without confirmation.
+7. Open “Min utveckling”, save a snapshot and verify interpreted development text.
+8. Create the suggested goal only after confirmation.
+9. Run “Klirr håller koll” and verify local-only copy and contextual Premium insights in Budget views.
+10. Open secondary tools under “Mer kontroll” and verify workspace, shared Budget demo and version-history positioning.
+11. Toggle Gratis → Premium → Gratis; confirm Budget data, Premium data and active workspace are preserved.
+12. Multiple workspaces: switch between two Budgets and verify income/expenses do not mix.
+13. Migration: load a legacy export without workspaces/premium fields and confirm it becomes “Min Budget”.
+14. Privacy integration: open Sekretess & data and verify AI enabled/disabled controls, consent records and “Vad AI såg”.
+15. AI consent off: withdraw AI consent and confirm local Premium analysis still works but Premium Buddy+ is blocked with a user-facing explanation.
+16. AI consent on: send a Premium Buddy+ request and confirm “Vad AI såg” logs summarized context with workspaceId and no raw transaction fields.
+17. Premium export/deletion: export data and verify Premium + Privacy state are included; clear active Budget and verify consent history remains.
+18. Free/Premium switching with Privacy: verify AI preferences, consent records and AI logs survive plan switching.
+19. Accessibility: keyboard-operate the plan switch, Premium actions and Privacy controls; locked/blocked states have text explanations.

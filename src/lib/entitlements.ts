@@ -9,6 +9,10 @@ export const freeEntitlements: Entitlements = {
   scenarios: true,
   export: true,
   cloudSync: true,
+  premiumHub: false,
+  improvementPlan: false,
+  developmentTracking: false,
+  smartMonitoring: false,
   budgetBuddyAdvanced: false,
   deepAnalysis: false,
   proactiveInsights: false,
@@ -39,6 +43,6 @@ export function hasEntitlement(entitlements: Entitlements | undefined, feature: 
 
 export function normalizeSubscription(plan?: SubscriptionPlan, status?: SubscriptionStatus) {
   const safePlan: SubscriptionPlan = plan === 'pro' ? 'pro' : 'free';
-  const safeStatus: SubscriptionStatus = status === 'active' || status === 'trialing' || status === 'past_due' || status === 'inactive' ? status : 'active';
+  const safeStatus: SubscriptionStatus = status === 'active' || status === 'trialing' || status === 'past_due' || status === 'inactive' ? status : 'inactive';
   return { subscriptionPlan: safePlan, subscriptionStatus: safeStatus, entitlements: getEntitlements(safePlan, safeStatus) };
 }

@@ -104,6 +104,17 @@ Text och belopp är alltid primära. Visualiseringar är ett stöd.
 
 ## Premium och Gratis
 
-Klirrs kärna ska vara komplett gratis. Premium sparar tid och ger mer automation, historik och fördjupning.
+Klirrs kärna ska vara komplett gratis. Premium sparar tid och hjälper användaren att förbättra Budgeten, följa resultatet och låta Klirr hålla koll.
 
 Premium får aldrig låsa användarens möjlighet att förstå eller underhålla sin Budget.
+
+## Privacy & Trust
+
+Användaren ska kunna förstå, exportera och radera sin data.
+
+Den manuella Budgeten ska fungera utan AI.
+
+Budget Buddy ska visa vilken sammanfattad kontext AI har fått.
+
+Klirr ska inte göra påståenden om säkerhet, region, kryptering eller regelefterlevnad som inte stöds av faktisk implementation.
+

@@ -1,0 +1,2 @@
+import { legalDocumentConfig } from '../../lib/privacy';
+export const termsDraft = { title: 'Användarvillkor', status: 'Utkast – kräver juridisk granskning före produktion', config: legalDocumentConfig, sections: ['tjänstens omfattning', 'kontoansvar', 'Budget Buddy som informativ hjälp', 'inte reglerad finansiell/juridisk rådgivning', 'bekräftelse före ändringar', 'demo- och Premiumbegränsningar', 'användardata', 'acceptabel användning', 'ansvar – juridisk review', 'uppsägning/radering', 'ändringar', 'lagval/kontakt – placeholder'] };
