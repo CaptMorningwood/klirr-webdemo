@@ -2,6 +2,7 @@ import type { AppState } from '../types';
 import { normalizeSubscription } from './entitlements';
 import { ensureWorkspaceState } from './premiumWorkspace';
 import { migrateOnboardingState } from './onboarding';
+import { normalizePrivacyState } from './privacy';
 
 const KEY = 'klirr-webdemo-v0.7-state';
 
@@ -15,7 +16,7 @@ export function loadState(): AppState | null {
   try {
     const parsed = JSON.parse(raw) as AppState;
     const onboarding = migrateOnboardingState({ onboarding: parsed.onboarding, onboardingCompleted: parsed.onboardingCompleted });
-    return ensureWorkspaceState({ ...parsed, ...normalizeSubscription(parsed.subscriptionPlan, parsed.subscriptionStatus), onboarding, onboardingCompleted: onboarding.status === 'COMPLETED' });
+return normalizePrivacyState(ensureWorkspaceState({ ...parsed, ...normalizeSubscription(parsed.subscriptionPlan, parsed.subscriptionStatus), onboarding, onboardingCompleted: onboarding.status === 'COMPLETED' }));
   } catch { return null; }
 }
 

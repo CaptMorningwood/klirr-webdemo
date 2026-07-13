@@ -1,0 +1,1 @@
+export const trackingInformationDraft = { title: 'Cookie- och spårningsinformation', status: 'Utkast – kräver juridisk granskning före produktion', nonEssentialTrackingActive: false, text: 'Klirr använder för närvarande inga icke-nödvändiga analys- eller marknadsföringscookies i denna demo.' };
