@@ -101,3 +101,9 @@ Visualiseringar i Klirr ska förklara Budgeten snabbare, aldrig bara dekorera.
 Varje översiktsrad får högst en kompakt visualisering.
 
 Text och belopp är alltid primära. Visualiseringar är ett stöd.
+
+## Premium och Gratis
+
+Klirrs kärna ska vara komplett gratis. Premium sparar tid och ger mer automation, historik och fördjupning.
+
+Premium får aldrig låsa användarens möjlighet att förstå eller underhålla sin Budget.

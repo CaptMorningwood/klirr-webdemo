@@ -239,6 +239,16 @@ export interface Entitlements {
   scenarios: boolean;
   export: boolean;
   cloudSync: boolean;
+  budgetBuddyAdvanced: boolean;
+  deepAnalysis: boolean;
+  proactiveInsights: boolean;
+  budgetHistory: boolean;
+  budgetGoals: boolean;
+  reminders: boolean;
+  automaticReview: boolean;
+  multipleBudgets: boolean;
+  sharedBudget: boolean;
+  versionHistory: boolean;
 }
 
 export interface BuddyActionHistoryEntry {
@@ -264,6 +274,99 @@ export interface BuddySession {
   lastDiscussedPlan?: Array<{ label: string; amount: number; category?: string }>;
 }
 
+
+export interface BudgetMetricSnapshot {
+  id: string;
+  createdAt: string;
+  reason: string;
+  budgetHealthScore: number;
+  totalIncome: number;
+  fixedTotal: number;
+  variableTotal: number;
+  margin: number;
+  lifeCost: number;
+}
+
+export type BudgetGoalType = 'budget_health' | 'margin_amount' | 'margin_ratio' | 'buffer_amount' | 'reduce_fixed_expenses';
+export interface BudgetGoal {
+  id: string;
+  type: BudgetGoalType;
+  label: string;
+  targetValue: number;
+  createdAt: string;
+  status: 'active' | 'paused' | 'completed';
+  dueDate?: string;
+}
+
+export interface Reminder {
+  id: string;
+  title: string;
+  note?: string;
+  dueAt: string;
+  recurrence: 'none' | 'weekly' | 'monthly';
+  status: 'active' | 'completed' | 'dismissed';
+  relatedArea?: string;
+}
+
+export interface AutomaticReviewState {
+  enabled: boolean;
+  lastRunAt?: string;
+  lastResult?: { summary: string; unclearCount: number; transferCount: number; recurringCount: number; duplicateIncomeWarnings: number };
+  runIntervalDays: 7 | 14 | 30;
+  lastKnownDetectionSignature?: string;
+}
+
+export interface SharedMember {
+  id: string;
+  name: string;
+  email?: string;
+  role: 'owner' | 'editor' | 'viewer';
+  status: 'active' | 'simulated_invite';
+}
+
+export interface BudgetWorkspaceMetadata {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  members: SharedMember[];
+  archived?: boolean;
+}
+
+export interface BudgetWorkspaceData {
+  accounts: Account[];
+  transactions: Transaction[];
+  rules: Rule[];
+  incomes: Income[];
+  manualExpenses: ManualExpense[];
+  variablePlan: VariablePlanItem[];
+  recurringDecisions: Record<string, RecurringDecision>;
+  transferDecisions: Record<string, TransferDecision>;
+  reviewDecisions?: Record<string, ReviewDecision>;
+  scenarioOff: string[];
+  chatMessages: ChatMessage[];
+  buddyActionHistory?: BuddyActionHistoryEntry[];
+  buddySession?: BuddySession;
+  onboardingCompleted: boolean;
+  onboarding?: OnboardingState;
+  householdProfile?: HouseholdProfile;
+  budgetMetricSnapshots?: BudgetMetricSnapshot[];
+  budgetGoals?: BudgetGoal[];
+  reminders?: Reminder[];
+  automaticReview?: AutomaticReviewState;
+  dismissedInsightKeys?: string[];
+}
+
+export interface RestorableBudgetVersion {
+  id: string;
+  workspaceId: string;
+  createdAt: string;
+  reason: string;
+  metrics: BudgetMetricSnapshot;
+  data: BudgetWorkspaceData;
+  hash?: string;
+}
+
 export interface AppState {
   accounts: Account[];
   transactions: Transaction[];
@@ -284,6 +387,15 @@ export interface AppState {
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStatus?: SubscriptionStatus;
   entitlements?: Entitlements;
+  activeBudgetId?: string;
+  workspaces?: BudgetWorkspaceMetadata[];
+  workspaceData?: Record<string, BudgetWorkspaceData>;
+  budgetMetricSnapshots?: BudgetMetricSnapshot[];
+  budgetGoals?: BudgetGoal[];
+  reminders?: Reminder[];
+  automaticReview?: AutomaticReviewState;
+  budgetVersions?: RestorableBudgetVersion[];
+  dismissedInsightKeys?: string[];
 }
 
 export interface DetectionResult {
