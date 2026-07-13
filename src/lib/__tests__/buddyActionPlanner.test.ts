@@ -215,7 +215,7 @@ describe('budget checkup action', () => {
       handledReviewCount: 1,
     };
     const before = JSON.stringify(context);
-    const plan = planBuddyAction({ message: 'Städa min budget ✨', context });
+    const plan = planBuddyAction({ message: 'Städa min Budget ✨', context });
     expect(JSON.stringify(context)).toBe(before);
     expect(plan.proposedAction?.type).toBe('run_budget_checkup');
     if (plan.proposedAction?.type === 'run_budget_checkup') {
@@ -228,7 +228,7 @@ describe('budget checkup action', () => {
       expect(issues.some(issue => /Nöje är 0/i.test(issue.label))).toBe(true);
       expect(issues.some(issue => /Buffert\/sparande är 0/i.test(issue.label))).toBe(true);
       expect(issues.some(issue => /Mat tar över/i.test(issue.label))).toBe(true);
-      expect(issues.some(issue => /Måsten är över 80%/i.test(issue.label))).toBe(true);
+      expect(issues.some(issue => /Fasta utgifter är över 80%/i.test(issue.label))).toBe(true);
       expect(issues.some(issue => /återkommande/i.test(issue.label))).toBe(true);
       expect(issues.some(issue => /överföringar/i.test(issue.label))).toBe(true);
       expect(issues.some(issue => /Många oklara/i.test(issue.label))).toBe(true);
@@ -240,7 +240,7 @@ describe('budget checkup action', () => {
     expect(plan.proposedAction?.type).toBe('run_budget_checkup');
     if (plan.proposedAction?.type === 'run_budget_checkup') {
       expect(plan.proposedAction.payload.issues.some(issue => /Hushållsprofil saknas/i.test(issue.label) && issue.tab === 'household')).toBe(true);
-      expect(plan.proposedAction.payload.issues.some(issue => /Rörlig plan saknas/i.test(issue.label) && issue.message)).toBe(true);
+      expect(plan.proposedAction.payload.issues.some(issue => /Rörliga utgifter saknas/i.test(issue.label) && issue.message)).toBe(true);
     }
   });
 });

@@ -56,10 +56,10 @@ export function buildImportChecklist(summary: ImportResultSummary): ImportCheckl
   const items: ImportChecklistItem[] = [];
   if (summary.possibleIncomeCount > 0) items.push({ id: 'income', label: 'Bekräfta inkomster', buttonLabel: 'Gå till återkommande', target: 'recurring' });
   if (summary.possibleTransferCount > 0) items.push({ id: 'transfers', label: 'Granska överföringar', buttonLabel: 'Gå till överföringar', target: 'transfers' });
-  if (summary.possibleRecurringExpenseCount > 0) items.push({ id: 'recurring', label: 'Bekräfta måsten/återkommande', buttonLabel: 'Gå till återkommande', target: 'recurring' });
+  if (summary.possibleRecurringExpenseCount > 0) items.push({ id: 'recurring', label: 'Bekräfta fasta utgifter/återkommande', buttonLabel: 'Gå till återkommande', target: 'recurring' });
   if (summary.unclearReviewItemCount > 0) items.push({ id: 'review', label: 'Kolla oklart', buttonLabel: 'Gå till oklart', target: 'review' });
   items.push({ id: 'buddy', label: 'Kör Budget Buddy Checkup', buttonLabel: 'Städa med Buddy', target: 'buddy' });
   return items;
 }
 
-export const importBuddyCleanupMessage = 'Städa min budget efter importen';
+export const importBuddyCleanupMessage = 'Städa min Budget efter importen';

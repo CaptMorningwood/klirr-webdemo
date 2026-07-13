@@ -32,16 +32,16 @@ export function calculateBudgetHealth(input: { summary: BudgetSummary; detection
 
   if (income > 0) {
     const fixedShare = summary.fixedTotal / income;
-    if (fixedShare > 0.8) add('high-recurring-share', 'Återkommande kostnader tar mycket stor del av inkomsten.', -18);
-    else if (fixedShare > 0.65) add('elevated-recurring-share', 'Återkommande kostnader tar stor del av inkomsten.', -10);
-    else add('manageable-recurring-share', 'Återkommande kostnader lämnar utrymme i Budgeten.', 8);
+    if (fixedShare > 0.8) add('high-recurring-share', 'Fasta utgifter tar mycket stor del av inkomsten.', -18);
+    else if (fixedShare > 0.65) add('elevated-recurring-share', 'Fasta utgifter tar stor del av inkomsten.', -10);
+    else add('manageable-recurring-share', 'Fasta utgifter lämnar utrymme i Budgeten.', 8);
   }
 
   const buffer = summary.variableItems.filter(item => /buffert|sparande/i.test(`${item.label} ${item.category}`)).reduce((sum, item) => sum + item.amount, 0);
   if (buffer > 0) add('buffer-present', 'Budgeten innehåller buffert eller sparande.', 8);
   else add('buffer-missing', 'Budgeten saknar buffert eller sparande.', -6);
 
-  if (summary.remainingAfterFixed > 0 && summary.variablePlanTotal >= summary.remainingAfterFixed * 0.98) add('variable-consumes-space', 'Rörlig Budget använder nästan allt utrymme efter Måsten.', -10);
+  if (summary.remainingAfterFixed > 0 && summary.variablePlanTotal >= summary.remainingAfterFixed * 0.98) add('variable-consumes-space', 'Rörliga utgifter använder nästan allt utrymme efter fasta utgifter.', -10);
 
   const food = summary.variableItems.filter(item => /mat|hushåll|hushall|livsmedel/i.test(`${item.label} ${item.category}`)).reduce((sum, item) => sum + item.amount, 0);
   if (food > 0 && (food < 1500 || food > 18000)) add('food-outlier', 'Matbudgeten ser ovanligt låg eller hög ut.', -5);
@@ -52,7 +52,7 @@ export function calculateBudgetHealth(input: { summary: BudgetSummary; detection
   const unresolved = Math.max(0, Number(input.visibleReviewCount ?? input.detection?.reviewItems?.length ?? 0) - Number(input.handledReviewCount || 0));
   if (unresolved > 0) add('unresolved-review', 'Oklara poster behöver granskas innan Budgeten är helt tillförlitlig.', unresolved >= 8 ? -10 : -5);
   if (Number(input.unconfirmedRecurringCount || 0) > 0) add('unconfirmed-recurring', 'Obekräftade återkommande poster kan påverka Budgeten.', -6);
-  if (!input.state?.householdProfile) add('household-missing', 'Hushållsprofil saknas, så Rörlig Budget blir mindre träffsäker.', -4);
+  if (!input.state?.householdProfile) add('household-missing', 'Hushållsprofil saknas, så Rörliga utgifter blir mindre träffsäker.', -4);
   if (Number(input.highSeverityIssueCount || 0) > 0) add('critical-issues', 'Budget Checkup har kritiska saker att lösa.', -12);
 
   const finalScore = clampScore(score);
@@ -79,17 +79,17 @@ export function budgetHealthShortStatus(result: BudgetHealthResult) {
 
 const nextStepByReason: Record<string, string> = {
   'income-missing': 'Lägg till eller bekräfta återkommande inkomst.',
-  'negative-margin': 'Justera Rörlig Budget så att Budgeten inte går minus efter plan.',
-  'thin-margin': 'Minska eller prioritera om Rörlig Budget för att skapa marginal.',
-  'high-recurring-share': 'Se över Måsten och återkommande kostnader som tar stor del av inkomsten.',
-  'elevated-recurring-share': 'Gå igenom Måsten för att hitta kostnader som kan justeras.',
-  'buffer-missing': 'Be Budget Buddy föreslå en mer hållbar Rörlig Budget med buffert.',
-  'variable-consumes-space': 'Lämna mer utrymme efter Måsten genom att justera Rörlig Budget.',
+  'negative-margin': 'Justera Rörliga utgifter så att Budgeten inte går minus efter plan.',
+  'thin-margin': 'Minska eller prioritera om Rörliga utgifter för att skapa marginal.',
+  'high-recurring-share': 'Se över Fasta utgifter och fasta utgifter som tar stor del av inkomsten.',
+  'elevated-recurring-share': 'Gå igenom fasta utgifter för att hitta kostnader som kan justeras.',
+  'buffer-missing': 'Be Budget Buddy föreslå en mer hållbar Rörliga utgifter med buffert.',
+  'variable-consumes-space': 'Lämna mer utrymme efter fasta utgifter genom att justera Rörliga utgifter.',
   'food-outlier': 'Kontrollera matbudgeten så att nivån är rimlig för hushållet.',
   'duplicate-income': 'Granska inkomster för att undvika dubbelräkning.',
   'unresolved-review': 'Öppna Import & granskning och hantera oklara poster.',
   'unconfirmed-recurring': 'Bekräfta eller välj bort återkommande poster i Import & granskning.',
-  'household-missing': 'Komplettera hushållsprofilen så att Rörlig Budget blir mer träffsäker.',
+  'household-missing': 'Komplettera hushållsprofilen så att Rörliga utgifter blir mer träffsäker.',
   'critical-issues': 'Kör Budget Checkup och lös de viktigaste varningarna först.',
 };
 

@@ -349,3 +349,24 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
   .mini-progress, .segmented-bar { max-width: 170px; }
 }
 @media (prefers-reduced-motion: reduce) { .health-ring-value { transition:none; } }
+
+.quick-choice-anchor { position: relative; display: flex; justify-content: flex-start; margin-bottom: 8px; }
+.quick-choice-trigger { min-height: 38px; width: auto; }
+.quick-choice-popover { position: absolute; left: 0; bottom: calc(100% + 8px); width: min(420px, calc(100vw - 40px)); max-height: min(62vh, 520px); overflow-y: auto; z-index: 20; border: 1px solid rgba(124,60,255,.18); border-radius: 22px; padding: 12px; background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(246,239,255,.96)); box-shadow: 0 18px 48px rgba(42,22,85,.18); }
+.quick-choice-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.quick-choice-head h3 { margin: 0; font-size: 15px; }
+.quick-choice-group { display: grid; gap: 6px; margin-top: 10px; }
+.quick-choice-group h4 { margin: 0; color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.quick-choice-item { min-height: 44px; width: 100%; border: 1px solid rgba(124,60,255,.16); border-radius: 16px; background: rgba(255,255,255,.82); color: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; text-align: left; cursor: pointer; transition: .15s ease; }
+.quick-choice-item b { display: block; font-size: 14px; }
+.quick-choice-item small { display: block; margin-top: 2px; color: var(--muted); font-weight: 650; line-height: 1.25; }
+.quick-choice-item:hover, .quick-choice-item:focus-visible, .quick-choice-trigger:focus-visible { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); outline: 3px solid rgba(124,60,255,.18); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .quick-choice-anchor { margin-bottom: 6px; }
+  .quick-choice-trigger { min-height: 36px; padding: 7px 11px; }
+  .quick-choice-popover { position: fixed; left: 10px; right: 10px; bottom: calc(var(--mobile-bottom-space) + 78px + env(safe-area-inset-bottom)); width: auto; max-height: min(54dvh, 430px); border-radius: 24px; padding: 12px; }
+  .quick-choice-head h3 { font-size: 14px; }
+  .quick-choice-item b { font-size: 13.5px; }
+  .quick-choice-item small { font-size: 12px; }
+}

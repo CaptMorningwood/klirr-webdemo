@@ -9,7 +9,7 @@ describe('budget completion', () => {
   it('is deterministic and separate from Budget Health', () => {
     const completion = calculateBudgetCompletion({ state: baseState, summary });
     expect(completion.percentage).toBe(20);
-    expect(completion.missingItems.map(item => item.label)).toEqual(['Hushåll', 'Inkomst', 'Måsten', 'Rörlig Budget']);
+    expect(completion.missingItems.map(item => item.label)).toEqual(['Hushåll', 'Inkomst', 'Fasta utgifter', 'Rörliga utgifter']);
   });
 
   it('counts setup coverage across income, musts, variable budget and checkup', () => {

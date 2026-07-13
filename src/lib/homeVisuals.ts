@@ -18,8 +18,8 @@ export function buildBudgetDistribution(input: { totalIncome: number; fixedTotal
   const overAllocated = totalIncome > 0 && allocated > totalIncome;
   const widthBase = overAllocated ? allocated || 1 : denominator;
   const segments: Segment[] = [
-    { key: 'fixed', label: 'Måsten', value: fixed, share: totalIncome > 0 ? (fixed / totalIncome) * 100 : 0, width: allocated > 0 || positiveMargin > 0 ? (fixed / widthBase) * 100 : 0 },
-    { key: 'variable', label: 'Rörlig Budget', value: variable, share: totalIncome > 0 ? (variable / totalIncome) * 100 : 0, width: allocated > 0 || positiveMargin > 0 ? (variable / widthBase) * 100 : 0 },
+    { key: 'fixed', label: 'Fasta utgifter', value: fixed, share: totalIncome > 0 ? (fixed / totalIncome) * 100 : 0, width: allocated > 0 || positiveMargin > 0 ? (fixed / widthBase) * 100 : 0 },
+    { key: 'variable', label: 'Rörliga utgifter', value: variable, share: totalIncome > 0 ? (variable / totalIncome) * 100 : 0, width: allocated > 0 || positiveMargin > 0 ? (variable / widthBase) * 100 : 0 },
     { key: 'margin', label: 'Marginal', value: positiveMargin, share: totalIncome > 0 ? (realMargin / totalIncome) * 100 : 0, width: overAllocated ? 0 : (positiveMargin / widthBase) * 100 },
   ].map(segment => ({ ...segment, width: clampPct(segment.width) }));
   return { segments, overAllocated, deficit: overAllocated ? allocated - totalIncome : Math.max(0, -realMargin) };

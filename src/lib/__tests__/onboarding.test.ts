@@ -47,7 +47,7 @@ describe('onboarding validation warnings and summary', () => {
   });
 
   it('warns when fixed costs are above income', () => {
-    expect(onboardingWarnings({ state: base, totalIncome: 10000, fixedTotal: 12000, remainingAfterFixed: -2000, variablePlanTotal: 0, remainingAfterPlan: -2000 }).some(w => w.includes('Måsten är högre'))).toBe(true);
+    expect(onboardingWarnings({ state: base, totalIncome: 10000, fixedTotal: 12000, remainingAfterFixed: -2000, variablePlanTotal: 0, remainingAfterPlan: -2000 }).some(w => w.includes('Fasta utgifter är högre'))).toBe(true);
   });
 
   it('warns for negative margin and variable plan above remaining', () => {

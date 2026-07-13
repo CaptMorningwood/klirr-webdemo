@@ -95,8 +95,8 @@ export function onboardingWarnings(input: {
   const warnings: string[] = [];
   if (input.totalIncome <= 0) warnings.push('Inkomst saknas. Lägg till lön, Barnbidrag/support eller annan inkomst innan du litar på budgeten.');
   if (!input.state.householdProfile) warnings.push('Hushållsprofil saknas. Då blir mat, transport och vardag svårare att föreslå rimligt.');
-  if (input.totalIncome > 0 && input.fixedTotal > input.totalIncome) warnings.push('Måsten är högre än inkomsten. Budgeten behöver justeras innan månaden känns trygg.');
-  if (input.variablePlanTotal > input.remainingAfterFixed) warnings.push('Den rörliga planen är högre än det som finns kvar efter måsten.');
+  if (input.totalIncome > 0 && input.fixedTotal > input.totalIncome) warnings.push('Fasta utgifter är högre än inkomsten. Budgeten behöver justeras innan månaden känns trygg.');
+  if (input.variablePlanTotal > input.remainingAfterFixed) warnings.push('Den rörliga planen är högre än det som finns kvar efter fasta utgifter.');
   if (input.remainingAfterPlan < 0) warnings.push('Marginalen efter planen är negativ.');
   const food = input.state.variablePlan.find(item => item.include !== false && /mat|hushåll/i.test(item.label))?.amount || 0;
   if (food > 0 && food < 1800) warnings.push('Matbudgeten ser väldigt låg ut. Dubbelkolla att den räcker för hushållet.');

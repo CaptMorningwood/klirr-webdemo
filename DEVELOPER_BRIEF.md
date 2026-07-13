@@ -4,7 +4,7 @@
 
 Klirr är en privatekonomiapp som fokuserar på frågan: **Vad kostar mitt liv varje månad?**
 
-Appen identifierar fasta måsten, rörlig plan, inkomster, interna överföringar och ekonomiskt utrymme framåt. Budget Buddy är en chattliknande ekonomikompis som förklarar siffror och guidar i appen.
+Appen identifierar fasta fasta utgifter, rörlig plan, inkomster, interna överföringar och ekonomiskt utrymme framåt. Budget Buddy är en chattliknande ekonomikompis som förklarar siffror och guidar i appen.
 
 ## Nuvarande teknisk bas
 

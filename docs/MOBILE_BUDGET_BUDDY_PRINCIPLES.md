@@ -5,7 +5,7 @@ Budget Buddy på mobil ska kännas som en fokuserad del av Klirr – inte som en
 ## Kärnan
 
 - Budget Buddy hjälper användaren förstå, skydda och förbättra sin Budget.
-- Fokus ligger på återkommande inkomster, återkommande kostnader, Rörlig Budget och marginal.
+- Fokus ligger på återkommande inkomster, fasta utgifter, Rörliga utgifter och marginal.
 - Inget ändras utan användarens uttryckliga godkännande.
 - Chattrutan ska alltid vara lätt att nå och aldrig blockeras av förslagsknappar eller navigation.
 
@@ -30,8 +30,8 @@ Budget Buddy på mobil ska kännas som en fokuserad del av Klirr – inte som en
 
 Använd språk som:
 - Din Budget
-- Rörlig Budget
-- Återkommande kostnader
+- Rörliga utgifter
+- Fasta utgifter
 - Marginal
 - Budgethälsa
 
