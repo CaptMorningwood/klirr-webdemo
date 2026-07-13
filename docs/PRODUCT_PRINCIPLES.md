@@ -85,3 +85,11 @@ Skriv varmt, tydligt och konkret. Föredra språk som visar vad Budgeten betyder
 - “Det här gör Budgeten mer hållbar.”
 
 Undvik att rama in produkten som en historisk månad. Säg hellre “Budgeten saknar just nu marginal” än “månaden gick dåligt”.
+
+## Hemvyn och Budgethälsa
+
+Hemvyn ska ge en lugn överblick över Budgeten. Förklaringar och nästa steg visas först när användaren fäller ut en del.
+
+Budgethälsa ska alltid vara transparent, förklarbar och handlingsbar.
+
+Budgethälsa mäter Budgetens hållbarhet — aldrig användarens värde eller rikedom.

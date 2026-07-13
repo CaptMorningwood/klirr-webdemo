@@ -275,6 +275,8 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
   .chat-header p { font-size: 12.5px; }
 }
 
+.home-hero { margin-bottom: 14px; }
+
 /* Issue #47: compact expandable economic rows */
 .compact-summary { padding: 12px 14px; }
 .compact-summary-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; }
@@ -311,3 +313,4 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
   .budget-detail-actions .btn { width:100%; }
 }
 @media (prefers-reduced-motion: reduce) { .budget-row-chevron { transition:none; } }
+

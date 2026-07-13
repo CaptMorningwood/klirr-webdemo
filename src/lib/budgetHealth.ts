@@ -59,6 +59,49 @@ export function calculateBudgetHealth(input: { summary: BudgetSummary; detection
   return { score: finalScore, label: budgetHealthLabel(finalScore), reasons };
 }
 
+export const budgetHealthImprovementMessage = 'Hjälp mig förbättra min Budgethälsa. Förklara vad som drar ner den och föreslå konkreta förändringar i min Budget. Ändra ingenting utan att först visa ett actionkort och be om min bekräftelse.';
+
+export function splitBudgetHealthReasons(reasons: BudgetHealthReason[]) {
+  return {
+    positive: reasons.filter(reason => reason.impact > 0),
+    negative: reasons.filter(reason => reason.impact < 0),
+  };
+}
+
+export function budgetHealthShortStatus(result: BudgetHealthResult) {
+  const negatives = result.reasons.filter(reason => reason.impact < 0);
+  const hasGoodMargin = result.reasons.some(reason => reason.id === 'strong-margin' || reason.id === 'positive-margin');
+  if (result.score >= 75 && negatives.length) return hasGoodMargin ? 'Budgeten har god marginal men några saker behöver fortfarande granskas.' : 'Budgeten är stabil men några saker kan stärkas.';
+  if (result.score >= 60) return 'Budgeten fungerar, men några delar gör den mer sårbar.';
+  if (result.score >= 40) return 'Budgeten är sårbar och behöver en tydligare marginal.';
+  return 'Budgeten behöver mer stabilitet innan den är hållbar.';
+}
+
+const nextStepByReason: Record<string, string> = {
+  'income-missing': 'Lägg till eller bekräfta återkommande inkomst.',
+  'negative-margin': 'Justera Rörlig Budget så att Budgeten inte går minus efter plan.',
+  'thin-margin': 'Minska eller prioritera om Rörlig Budget för att skapa marginal.',
+  'high-recurring-share': 'Se över Måsten och återkommande kostnader som tar stor del av inkomsten.',
+  'elevated-recurring-share': 'Gå igenom Måsten för att hitta kostnader som kan justeras.',
+  'buffer-missing': 'Be Budget Buddy föreslå en mer hållbar Rörlig Budget med buffert.',
+  'variable-consumes-space': 'Lämna mer utrymme efter Måsten genom att justera Rörlig Budget.',
+  'food-outlier': 'Kontrollera matbudgeten så att nivån är rimlig för hushållet.',
+  'duplicate-income': 'Granska inkomster för att undvika dubbelräkning.',
+  'unresolved-review': 'Öppna Import & granskning och hantera oklara poster.',
+  'unconfirmed-recurring': 'Bekräfta eller välj bort återkommande poster i Import & granskning.',
+  'household-missing': 'Komplettera hushållsprofilen så att Rörlig Budget blir mer träffsäker.',
+  'critical-issues': 'Kör Budget Checkup och lös de viktigaste varningarna först.',
+};
+
+export function budgetHealthNextSteps(reasons: BudgetHealthReason[], limit = 3) {
+  const steps = reasons
+    .filter(reason => reason.impact < 0)
+    .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+    .map(reason => nextStepByReason[reason.id])
+    .filter((step): step is string => Boolean(step));
+  return Array.from(new Set(steps)).slice(0, limit);
+}
+
 export function explainBudgetHealthChange(previous: BudgetHealthResult, next: BudgetHealthResult) {
   const delta = next.score - previous.score;
   if (delta === 0) return `Budgethälsan är fortfarande ${next.score}% — Budgetens stabilitet är oförändrad.`;

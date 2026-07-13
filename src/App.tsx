@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
@@ -24,7 +24,7 @@ import { buildImportChecklist, buildImportResultSummary, importBuddyCleanupMessa
 import { budgetBuddyCheckupMessage, buildManualOnboardingPatch, getOnboardingStepNumber, normalizeOnboardingState, onboardingWarnings, shouldShowForcedWelcome, type OnboardingStep } from './lib/onboarding';
 import { calculateBudgetCompletion } from './lib/budgetCompletion';
 import { planBuddyAction } from './lib/buddyActionPlanner';
-import { calculateBudgetHealth, explainBudgetHealthChange } from './lib/budgetHealth';
+import { budgetHealthImprovementMessage, budgetHealthNextSteps, budgetHealthShortStatus, calculateBudgetHealth, explainBudgetHealthChange, splitBudgetHealthReasons } from './lib/budgetHealth';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
 
@@ -142,7 +142,7 @@ type ExpandableBudgetItemProps = {
   status?: string;
   tone?: 'green' | 'warn' | 'danger';
   warning?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 function ExpandableBudgetItem({ id, title, amount, meta, status, tone, warning, children }: ExpandableBudgetItemProps) {
@@ -312,7 +312,7 @@ export default function App() {
 
       <main className="main">
         {showOnboarding && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} onExit={() => setOnboardingOpen(false)} />}
-        {!showOnboarding && appAccessible && tab === 'dashboard' && <DashboardView summary={summary} budgetHealth={budgetHealth} budgetCompletion={budgetCompletion} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onboarding={state.onboarding} dismissFirstRunGuide={() => setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), firstRunGuideDismissed: true } })} onExport={() => exportBudgetReport(summary, detection)} />}
+        {!showOnboarding && appAccessible && tab === 'dashboard' && <DashboardView summary={summary} budgetHealth={budgetHealth} budgetCompletion={budgetCompletion} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onboarding={state.onboarding} dismissFirstRunGuide={() => setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), firstRunGuideDismissed: true } })} onExport={() => exportBudgetReport(summary, detection)} onImproveBudgetHealth={() => { setBuddyAutoMessage(budgetHealthImprovementMessage); selectTab('buddy'); }} />}
         {!showOnboarding && appAccessible && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} detection={detection} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
         {!showOnboarding && appAccessible && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} onBuddyCleanup={() => { setBuddyAutoMessage(importBuddyCleanupMessage); selectTab('buddy'); }} onboardingActive={normalizeOnboardingState(state.onboarding, state.onboardingCompleted).status === 'IMPORT_PATH'} onContinueOnboarding={() => { setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), path: 'import', started: true, importCompleted: true, currentStep: 'importReview' } }); setTab('dashboard'); setOnboardingOpen(true); }} />}
         {!showOnboarding && appAccessible && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} summary={summary} detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
@@ -382,43 +382,46 @@ function OnboardingView({ initialState, state, setState, loadDemo, setTab, onExi
   </>;
 }
 
-function DashboardView({ summary, budgetHealth, budgetCompletion, detection, visibleReviewCount, loadDemo, setTab, hasData, onboarding, dismissFirstRunGuide, onExport }: { summary: ReturnType<typeof calculateBudget>; budgetHealth: ReturnType<typeof calculateBudgetHealth>; budgetCompletion: ReturnType<typeof calculateBudgetCompletion>; detection: DetectionResult; visibleReviewCount: number; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onboarding?: AppState['onboarding']; dismissFirstRunGuide: () => void; onExport: () => void }) {
-  if (!hasData || budgetCompletion.percentage < 100) {
-    return <><PageTitle title="Din Budget" subtitle="Bygg klart Budgeten i din egen takt." />
-      {normalizeOnboardingState(onboarding).status === 'SKIPPED' && <Card className="soft"><p role="status">Inga problem 😊 Du kan alltid starta guiden senare under Inställningar eller fråga Budget Buddy.</p></Card>}
-      <Card><h3>Din Budget behöver lite mer information 💚</h3><p>Du kan bygga klart den i din egen takt. Börja där det känns enklast.</p><div className="grid grid-3 compact-grid"><MetricCard label="Budget komplett" value={`${budgetCompletion.percentage}%`} /><MetricCard label="Inkomst" value={fmt(summary.totalIncome)} /><MetricCard label="Måsten" value={fmt(summary.fixedTotal)} /></div><ul aria-label="Budget completion checklist">{budgetCompletion.items.map(item => <li key={item.key}>{item.completed ? '✓' : '○'} {item.label}</li>)}</ul><div className="row"><button className="btn primary" onClick={() => setTab('income')}>Lägg till inkomst</button><button className="btn" onClick={() => setTab('musts')}>Lägg till Måsten</button><button className="btn" onClick={() => setTab('import')}>Importera kontoutdrag</button><button className="btn" onClick={() => setTab('variablePlan')}>Skapa Rörlig Budget</button><button className="btn" onClick={() => setTab('buddy')}>Låt Budget Buddy guida mig</button><button className="btn ghost" onClick={loadDemo}>Testa demo-data</button></div></Card></>;
-  }
+function DashboardView({ summary, budgetHealth, budgetCompletion, detection, visibleReviewCount, loadDemo, setTab, hasData, onboarding, dismissFirstRunGuide, onExport, onImproveBudgetHealth }: { summary: ReturnType<typeof calculateBudget>; budgetHealth: ReturnType<typeof calculateBudgetHealth>; budgetCompletion: ReturnType<typeof calculateBudgetCompletion>; detection: DetectionResult; visibleReviewCount: number; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onboarding?: AppState['onboarding']; dismissFirstRunGuide: () => void; onExport: () => void; onImproveBudgetHealth: () => void }) {
   const fixedPct = summary.totalIncome > 0 ? (summary.fixedTotal / summary.totalIncome) * 100 : 0;
+  const lifeCost = summary.fixedTotal + summary.variablePlanTotal;
+  const activeIncomeCount = summary.incomeItems.length;
+  const buffer = summary.variableItems.filter(item => /buffert|sparande/i.test(`${item.label} ${item.category}`)).reduce((sum, item) => sum + item.amount, 0);
+  const food = summary.variableItems.filter(item => /mat|hushåll|hushall|livsmedel/i.test(`${item.label} ${item.category}`)).reduce((sum, item) => sum + item.amount, 0);
+  const reviewCount = visibleReviewCount + getActionableRecurringCandidates(detection.recurring).length;
+  const healthReasons = splitBudgetHealthReasons(budgetHealth.reasons);
+  const nextSteps = budgetHealthNextSteps(budgetHealth.reasons);
+  const completionLabel = budgetCompletion.percentage >= 100 ? 'Setup täcker grunderna' : `${budgetCompletion.missingItems.length} delar saknas`;
+  const marginRatio = summary.totalIncome > 0 ? (summary.remainingAfterPlan / summary.totalIncome) * 100 : 0;
+  const row = (id: string, title: string, value: string, subtitle: string, content: ReactNode, important = false, tone?: 'green' | 'warn' | 'danger') => <ExpandableBudgetItem key={id} id={`home-${id}`} title={title} amount={value} meta={subtitle} status={important ? 'Viktigt' : undefined} tone={tone || (important ? 'warn' : undefined)} warning={important ? 'Behöver uppmärksamhet' : undefined}>{content}</ExpandableBudgetItem>;
+
+  if (!hasData || budgetCompletion.percentage < 100) {
+    return <><PageTitle title="Din Budget" subtitle="Vad livet kostar varje månad just nu — och hur hållbar Budgeten är." />
+      {normalizeOnboardingState(onboarding).status === 'SKIPPED' && <Card className="soft"><p role="status">Inga problem 😊 Du kan alltid starta guiden senare under Inställningar eller fråga Budget Buddy.</p></Card>}
+      <Card className="home-hero"><div className="metric-label">Primär överblick</div><div className="metric-value mono">Ditt liv kostar cirka {fmt(lifeCost)} /mån</div><p className="hint">Din Budget behöver lite mer information innan Budgethälsan blir riktigt träffsäker.</p></Card>
+      <Card className="budget-list-card"><h3>Bygg klart i lugn takt</h3><div className="budget-list">
+        {row('completion', 'Budgetkomplettering', `${budgetCompletion.percentage}%`, completionLabel, <><p>Budgetkomplettering mäter setup-täckning. Budgethälsa mäter hållbarhet.</p><ul>{budgetCompletion.items.map(item => <li key={item.key}>{item.completed ? 'Klart:' : 'Saknas:'} {item.label}</li>)}</ul></>)}
+        {row('health', 'Budgethälsa', 'Väntar', 'Mer underlag behövs', <p>Budgethälsa visas tydligare när inkomst, Måsten och Rörlig Budget finns på plats. Den mäter Budgetens hållbarhet — inte rikedom eller personligt värde.</p>)}
+      </div><div className="row" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => setTab('income')}>Lägg till inkomst</button><button className="btn" onClick={() => setTab('musts')}>Lägg till Måsten</button><button className="btn" onClick={() => setTab('import')}>Importera kontoutdrag</button><button className="btn" onClick={() => setTab('buddy')}>Låt Budget Buddy guida mig</button><button className="btn ghost" onClick={loadDemo}>Testa demo-data</button></div></Card></>;
+  }
+
   return <>
     <PageTitle title="Din Budget" subtitle="Vad livet kostar varje månad just nu — och hur hållbar Budgeten är." />
-    {onboarding?.currentStep === 'finish' && !onboarding.firstRunGuideDismissed && <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><b>Snabbguide för din första Budget</b><p className="hint">Kolla inkomster, återkommande kostnader, Rörlig Budget och marginal. Budget Buddy kan hjälpa dig justera utan att ändra något förrän du bekräftar.</p><div className="row"><button className="btn small" onClick={() => setTab('income')}>Inkomst</button><button className="btn small" onClick={() => setTab('musts')}>Måsten</button><button className="btn small" onClick={() => setTab('variablePlan')}>Rörlig Budget</button><button className="btn small primary" onClick={() => setTab('buddy')}>Budget Buddy ✨</button></div></div><button className="btn small ghost" onClick={dismissFirstRunGuide}>Stäng</button></div></Card>}
-    <div className="grid grid-3">
-      <MetricCard label="Inkomster" value={fmt(summary.totalIncome)} />
-      <MetricCard label="Återkommande kostnader / Måsten" value={fmt(summary.fixedTotal)} />
-      <MetricCard label="Marginal" value={fmtSigned(summary.remainingAfterPlan)} tone={summary.remainingAfterPlan >= 0 ? 'good' : 'bad'} />
-      <MetricCard label="Budget komplett" value={`${budgetCompletion.percentage}%`} />
-      <MetricCard label="Budgethälsa" value={`${budgetHealth.score}%`} tone={budgetHealth.score >= 75 ? 'good' : budgetHealth.score < 60 ? 'bad' : undefined} />
-    </div>
-    <div className="grid grid-2" style={{ marginTop: 16 }}>
-      <Card>
-        <div className="metric-label">Andel av inkomsten som är fasta måsten</div>
-        <div className="progress"><div style={{ width: `${Math.min(100, fixedPct)}%` }} /></div>
-        <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}><span>{pct(fixedPct)}</span><span>{fmt(summary.fixedTotal)} av {fmt(summary.totalIncome)}</span></div>
-      </Card>
-      <Card>
-        <div className="metric-label">Rörlig Budget</div>
-        <div className="metric-value mono">{fmt(summary.variablePlanTotal)}</div>
-        <div className="row" style={{ marginTop: 10 }}><button className="btn small" onClick={() => setTab('variablePlan')}>Ändra Rörlig Budget</button><button className="btn small" onClick={() => setTab('scenarios')}>Testa scenario</button></div>
-      </Card>
-    </div>
-    {summary.warnings.length > 0 && <Card className="warn" ><b>Saker som gör Budgeten mindre hållbar:</b><ul>{summary.warnings.map(w => <li key={w}>{w}</li>)}</ul></Card>}
-    <div className="grid grid-2" style={{ marginTop: 16 }}>
-      <Card><h3>Största måsten</h3>{summary.fixedItems.slice(0, 6).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<button className="btn small" style={{ marginTop: 10 }} onClick={() => setTab('musts')}>Visa alla</button></Card>
-      <Card><h3>Nästa steg för Budgeten</h3><div className="stack"><button className="btn" onClick={() => setTab('review')}>Granska oklara poster ({visibleReviewCount})</button><button className="btn" onClick={() => setTab('recurring')}>Bekräfta återkommande</button><button className="btn" onClick={onExport}>Exportera rapport</button></div></Card>
-    </div>
+    {onboarding?.currentStep === 'finish' && !onboarding.firstRunGuideDismissed && <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><b>Snabbguide för din första Budget</b><p className="hint">Kolla inkomster, återkommande kostnader, Rörlig Budget och marginal. Budget Buddy kan hjälpa dig justera utan att ändra något förrän du bekräftar.</p></div><button className="btn small ghost" onClick={dismissFirstRunGuide}>Stäng</button></div></Card>}
+    <Card className="home-hero"><div className="metric-label">Vad livet kostar varje månad just nu</div><div className="metric-value mono">Ditt liv kostar cirka {fmt(lifeCost)} /mån</div><p className="hint">Bygger på bekräftade inkomster, Måsten/återkommande kostnader och Rörlig Budget — inte historisk transaktionskonsumtion eller kontosaldo.</p></Card>
+    {summary.remainingAfterPlan < 0 && <Card className="danger"><b>Budgeten går minus efter plan.</b><p>Det här behöver hanteras innan Budgeten kan kallas hållbar.</p><button className="btn primary" onClick={() => setTab('variablePlan')}>Justera Rörlig Budget</button></Card>}
+    <Card className="budget-list-card"><div className="budget-list">
+      {row('budget-health', 'Budgethälsa', `${budgetHealth.score}%`, `${budgetHealth.label}. ${budgetHealthShortStatus(budgetHealth)}`, <div className="stack"><p><b>Vad betyder scoret?</b> Budgethälsa mäter hur hållbar och stabil din Budget är. Den mäter inte hur rik du är eller hur ”duktig” du är med pengar.</p><div className="grid grid-2 compact-grid"><div><h4>Stärker Budgethälsan</h4>{healthReasons.positive.map(r => <div className="list-line" key={r.id}><span>{r.label}</span><b className="mono">+{r.impact}</b></div>)}</div><div><h4>Drar ner Budgethälsan</h4>{healthReasons.negative.map(r => <div className="list-line" key={r.id}><span>{r.label}</span><b className="mono">{r.impact}</b></div>)}</div></div><p className="hint">Beräkningen är deterministisk och baseras på nuvarande Budgetläge: inkomst, marginal, Måsten, Rörlig Budget, buffert, granskningsläge och hushållsprofil.</p><h4>Nästa steg</h4><ul>{nextSteps.map(step => <li key={step}>{step}</li>)}</ul><div className="row"><button className="btn primary" onClick={onImproveBudgetHealth}>Hjälp mig förbättra Budgethälsan ✨</button><button className="btn" onClick={() => setTab('variablePlan')}>Visa Rörlig Budget</button></div></div>, budgetHealth.score < 60, budgetHealth.score < 60 ? 'danger' : budgetHealth.score < 75 ? 'warn' : 'green')}
+      {row('income', 'Inkomster', fmt(summary.totalIncome), `${activeIncomeCount} aktiva källor`, <><p>Återkommande inkomst som Budgeten räknar med.</p>{summary.incomeItems.slice(0, 5).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<button className="btn small" onClick={() => setTab('income')}>Visa inkomster</button></>)}
+      {row('musts', 'Måsten / återkommande kostnader', fmt(summary.fixedTotal), summary.totalIncome > 0 ? `${pct(fixedPct)} av inkomsten` : 'Andel visas när inkomst finns', <><p>Måsten är kostnader som påverkar Budgeten framåt.</p><div className="progress"><div style={{ width: `${Math.min(100, fixedPct)}%` }} /></div>{summary.fixedItems.slice(0, 6).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<button className="btn small" onClick={() => setTab('musts')}>Visa Måsten</button></>, fixedPct > 65, fixedPct > 80 ? 'danger' : 'warn')}
+      {row('variable', 'Rörlig Budget', fmt(summary.variablePlanTotal), `${summary.variableItems.length} kategorier`, <><p>Planerat utrymme för vardagliga och flexibla delar.</p>{summary.variableItems.slice(0, 6).map(i => <div className="list-line" key={i.id}><span>{i.label}</span><b className="mono">{fmt(i.amount)}</b></div>)}<p className="hint">Buffert/sparande: {fmt(buffer)}. Mat: {fmt(food)}.</p><button className="btn small" onClick={() => setTab('variablePlan')}>Visa Rörlig Budget</button></>)}
+      {row('margin', 'Marginal', fmtSigned(summary.remainingAfterPlan), summary.remainingAfterPlan < 0 ? 'Negativ marginal' : summary.remainingAfterPlan < summary.totalIncome * 0.05 ? 'Tunn marginal' : 'Positiv marginal', <><p>Marginal är det som finns kvar efter Måsten och Rörlig Budget. Den visar hur mycket Budgeten tål innan den blir sårbar.</p><p>Marginal som andel av inkomsten: <b>{pct(marginRatio)}</b>.</p><div className="row"><button className="btn small" onClick={() => setTab('variablePlan')}>Justera Rörlig Budget</button><button className="btn small" onClick={onImproveBudgetHealth}>Fråga Buddy</button></div></>, summary.remainingAfterPlan < summary.totalIncome * 0.05, summary.remainingAfterPlan < 0 ? 'danger' : 'warn')}
+      {row('completion', 'Budgetkomplettering', `${budgetCompletion.percentage}%`, completionLabel, <><p>Budgetkomplettering mäter setup-täckning. Budgethälsa mäter hållbarhet.</p><ul>{budgetCompletion.items.map(item => <li key={item.key}>{item.completed ? 'Klart:' : 'Saknas:'} {item.label}</li>)}</ul></>)}
+      {reviewCount > 0 && row('review', 'Import & granskning', String(reviewCount), 'Saker behöver granskas', <><p>Oklara importposter eller obekräftade återkommande förslag kan göra Budgeten mindre tillförlitlig.</p><button className="btn small" onClick={() => setTab('review')}>Öppna Import & granskning</button></>, true)}
+    </div></Card>
+    <div className="row" style={{ marginTop: 14 }}><button className="btn primary" onClick={summary.remainingAfterPlan < summary.totalIncome * 0.05 ? () => setTab('variablePlan') : onImproveBudgetHealth}>{summary.remainingAfterPlan < summary.totalIncome * 0.05 ? 'Se över Rörlig Budget' : 'Hjälp mig förbättra Budgethälsan ✨'}</button><button className="btn ghost" onClick={onExport}>Exportera rapport</button></div>
   </>;
 }
-
 
 function SectionTabs<T extends string>({ items, active, onChange }: { items: Array<{ id: T; label: string; badge?: number }>; active: T; onChange: (id: T) => void }) {
   return <div className="section-tabs">{items.map(item => <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => onChange(item.id)}>{item.label}{!!item.badge && <span className="badge">{item.badge}</span>}</button>)}</div>;
