@@ -43,6 +43,15 @@ Användaren kan alltid hoppa in i Klirr på sitt sätt: bygga första Budgeten s
 
 Klirr ska aldrig straffa, skamma eller skuldbelägga en ofullständig Budget. Kopian ska hjälpa användaren bygga klart Budgeten i sin egen takt och påminna om att Budget Buddy kan hjälpa när användaren vill.
 
+
+## Överblick först
+
+Klirr visar överblicken först. Detaljer och redigering visas först när användaren ber om dem.
+
+En ekonomisk post ska vara lätt att förstå när den är stängd och enkel att ändra när den är öppen.
+
+Minimalism får aldrig gömma viktig Budget-information. Kompakt betyder inte kryptiskt: belopp, källa, status och säkerhetsinformation ska fortfarande vara tillgängliga, och kritiska varningar ska synas redan i överblicken. Färre synliga kontroller ska förbättra förståelsen och lugnet, inte minska användarens kontroll.
+
 ## Budget First language
 
 Preferred:
