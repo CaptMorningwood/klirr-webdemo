@@ -5,15 +5,17 @@ import type { AppState } from '../../types';
 
 const base = (): AppState => ({ accounts: [], transactions: [], rules: [], incomes: [], manualExpenses: [], variablePlan: [], recurringDecisions: {}, transferDecisions: {}, reviewDecisions: {}, scenarioOff: [], chatMessages: [], onboardingCompleted: true, subscriptionPlan: 'free', subscriptionStatus: 'active', entitlements: getEntitlements('free', 'active') });
 
-describe('premium entitlement matrix', () => {
+describe('paused Premium entitlement compatibility', () => {
   it('returns the exact free matrix', () => {
     expect(getEntitlements('free', 'active')).toEqual(freeEntitlements);
     expect(hasEntitlement(getEntitlements('free', 'active'), 'csvImport')).toBe(true);
     expect(hasEntitlement(getEntitlements('free', 'active'), 'deepAnalysis')).toBe(false);
   });
-  it('unlocks all capabilities for active or trialing pro only', () => {
-    expect(Object.values(getEntitlements('pro', 'active')).every(Boolean)).toBe(true);
-    expect(Object.values(getEntitlements('pro', 'trialing')).every(Boolean)).toBe(true);
+  it('keeps paused standalone Premium UI disabled even for legacy active pro state', () => {
+    expect(getEntitlements('pro', 'active').premiumHub).toBe(false);
+    expect(getEntitlements('pro', 'trialing').premiumHub).toBe(false);
+    expect(getEntitlements('pro', 'active').budgetBuddyAdvanced).toBe(true);
+    expect(getEntitlements('pro', 'active').deepAnalysis).toBe(true);
     expect(getEntitlements('pro', 'inactive')).toEqual(freeEntitlements);
     expect(getEntitlements('pro', 'past_due')).toEqual(freeEntitlements);
     expect(isPremiumPlan('pro', 'active')).toBe(true);

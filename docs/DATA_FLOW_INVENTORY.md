@@ -24,3 +24,6 @@ Export omfattar lokal Budget, konton, transaktioner, regler/beslut, Buddy-meddel
 Tidigare Budget Buddy-kontext byggdes nära anropet och innehöll `summary`, `recurring` och andra objekt med transaktions-ID-risk. Nu går `/api/budget-buddy` genom `prepareSafeAiContext`, som har denylist-test för `transactions`, `raw`, `originalDescription`, `counterparty`, `bankReference`, `balanceAfter`, `txIds`, `importedRows` och `fileContent`.
 
 - Premium 2.0: förbättringsplaner härleds från aktuell Budget; mål, snapshots, monitoreringsstatus och aktiveringsstatus sparas i AppState och ingår i exporten. Lokal Premium-analys skickas inte till AI.
+
+
+> Current product note: Klirr has no active paid tier. Legacy experiment data may remain in storage/export as archived or future-feature data, and all Budget Buddy AI uses the same summarized Privacy boundary.

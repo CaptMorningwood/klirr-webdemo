@@ -90,7 +90,7 @@ Just nu kostar din Budget ${fmt(s.totalMonthlyPlan)} och marginalen efter planen
   return { id: uid('msg'), role: 'assistant', content, actions, createdAt: todayIso() };
 }
 
-export type BuddySuggestionGroup = 'Förstå' | 'Förbättra' | 'Ändra' | 'Import/hjälp';
+export type BuddySuggestionGroup = 'Förstå' | 'Förbättra' | 'Ändra' | 'Import och koll';
 
 export type BuddySuggestion = {
   group: BuddySuggestionGroup;
@@ -101,17 +101,20 @@ export type BuddySuggestion = {
 
 export const buddySuggestionItems: BuddySuggestion[] = [
   { group: 'Förstå', label: 'Förklara min Budget', description: 'Se inkomster, fasta utgifter, rörliga utgifter och marginal.' },
-  { group: 'Förstå', label: 'Vad ska jag göra först?', description: 'Få nästa steg för en mer komplett Budget.' },
-  { group: 'Förstå', label: 'Vad är oklart?', description: 'Hitta poster som behöver granskas.' },
-  { group: 'Förbättra', label: 'Vad kan jag kapa?', description: 'Se rimliga förbättringsspår.' },
-  { group: 'Förbättra', label: 'Städa min Budget', description: 'Kör en Budget Checkup.' },
-  { group: 'Förbättra', label: 'Hjälp mig förbättra Budgethälsan', description: 'Fokusera på Budgethälsa och marginal.' },
-  { group: 'Förbättra', label: 'Skapa en krisbudget', description: 'Gör ett tillfälligt stramt förslag.' },
-  { group: 'Ändra', label: 'Lägg till inkomst', description: 'Få hjälp att lägga till eller ändra inkomst.' },
-  { group: 'Ändra', label: 'Ändra fasta utgifter', description: 'Gå igenom fasta utgifter som påverkar Budgeten.' },
-  { group: 'Ändra', label: 'Ändra rörliga utgifter', description: 'Planera flexibla vardagsutgifter.' },
-  { group: 'Import/hjälp', label: 'Hur importerar jag kontoutdrag?', description: 'Få steg för bankimport.' },
-  { group: 'Import/hjälp', label: 'Hur ändrar jag konton?', description: 'Förstå konton och interna överföringar.' },
+  { group: 'Förstå', label: 'Förklara min Budgethälsa', description: 'Förstå scoret och vad som påverkar det.' },
+  { group: 'Förstå', label: 'Förklara min marginal', description: 'Se vad som finns kvar efter planen.' },
+  { group: 'Förstå', label: 'Förklara min Budgetutveckling', description: 'Sammanfatta förändringar när data finns.' },
+  { group: 'Förbättra', label: 'Skapa min förbättringsplan', description: 'Få prioriterade steg för en starkare Budget.' },
+  { group: 'Förbättra', label: 'Visa tre alternativa planer', description: 'Jämför lugn, balanserad och stram plan.' },
+  { group: 'Förbättra', label: 'Hjälp mig nå mitt viktigaste mål', description: 'Koppla råden till målet som betyder mest.' },
+  { group: 'Förbättra', label: 'Prioritera mina nästa steg', description: 'Välj vad som är mest värt att göra först.' },
+  { group: 'Ändra', label: 'Hjälp mig justera inkomsten', description: 'Planera inkomständring med bekräftelse.' },
+  { group: 'Ändra', label: 'Föreslå rörliga utgifter', description: 'Bygg eller justera vardagsbudgeten.' },
+  { group: 'Ändra', label: 'Skapa en krisbudget', description: 'Gör ett tillfälligt stramt förslag.' },
+  { group: 'Ändra', label: 'Förbered ett scenario', description: 'Testa hur Budgeten påverkas utan att ändra direkt.' },
+  { group: 'Import och koll', label: 'Städa efter import', description: 'Hitta poster som behöver granskas.' },
+  { group: 'Import och koll', label: 'Kör Budget Checkup', description: 'Kontrollera luckor och nästa steg.' },
+  { group: 'Import och koll', label: 'Prioritera vad Klirr ska hålla koll på', description: 'Välj uppföljning som hjälper Budgeten mest.' },
 ];
 
 export const buddySuggestions = buddySuggestionItems.map(item => item.label);
