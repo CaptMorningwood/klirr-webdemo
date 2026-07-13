@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import type { Account, AppState, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
+import type { Account, AppState, BudgetGoal, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, Reminder, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
@@ -14,8 +14,11 @@ import { categorize } from './lib/rulesEngine';
 import { actionableCandidateReason, detectRecurring, getActionableRecurringCandidates } from './lib/recurrenceEngine';
 import { detectPossibleIncomeDuplicates, getUnifiedIncomeItems } from './lib/incomeReconciliation';
 import { countHandledReviewItems, getVisibleReviewItems } from './lib/reviewVisibility';
-import { getEntitlements } from './lib/entitlements';
+import { getEntitlements, hasEntitlement } from './lib/entitlements';
 import { clearState, loadState, saveState } from './lib/storage';
+import { addMetricSnapshot, createVersion, createWorkspace, duplicateWorkspace, ensureWorkspaceState, restoreVersion, switchWorkspace } from './lib/premiumWorkspace';
+import { analyzePremiumBudget, goalProgress, reminderBuckets } from './lib/premiumBudgetAnalysis';
+import { buildProactiveInsights } from './lib/premiumInsights';
 import { appendBuddyActionHistory, applyBuddyActionWithResult, findPendingBuddyAction, undoLastBuddyAction } from './lib/buddyActions';
 import { detectBuddyActionIntent } from './lib/buddyActionIntents';
 import { estimateSwedishNetSalary } from './lib/taxEstimate';
@@ -53,9 +56,18 @@ const initialState: AppState = {
   onboardingCompleted: false,
   onboarding: normalizeOnboardingState(),
   householdProfile: { ...defaultHouseholdProfile, householdType: 'single' },
-  subscriptionPlan: 'pro',
+  subscriptionPlan: 'free',
   subscriptionStatus: 'active',
-  entitlements: getEntitlements('pro'),
+  entitlements: getEntitlements('free', 'active'),
+  activeBudgetId: 'ws_default',
+  workspaces: [{ id: 'ws_default', name: 'Min Budget', createdAt: todayIso(), updatedAt: todayIso(), members: [{ id: 'member_owner', name: 'Du', role: 'owner', status: 'active' }] }],
+  workspaceData: {},
+  budgetMetricSnapshots: [],
+  budgetGoals: [],
+  reminders: [],
+  automaticReview: { enabled: false, runIntervalDays: 14 },
+  budgetVersions: [],
+  dismissedInsightKeys: [],
 };
 
 const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
@@ -74,7 +86,7 @@ const drawerNav = nav.filter(item => !primaryMobileTabs.includes(item.id));
 type PlanSection = 'musts' | 'variablePlan' | 'scenarios';
 type ImportReviewSection = 'import' | 'accounts' | 'transactions' | 'transfers' | 'recurring' | 'review';
 type HouseholdSection = 'profile' | 'income';
-type MoreSection = 'rules' | 'settings';
+type MoreSection = 'premium' | 'premiumTools' | 'rules' | 'settings';
 
 const legacyTabMap: Partial<Record<TabId, { tab: TabId; section?: PlanSection | ImportReviewSection | HouseholdSection | MoreSection }>> = {
   musts: { tab: 'plan', section: 'musts' },
@@ -212,7 +224,7 @@ function reviewTypeLabel(type: string) {
 }
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => { const saved = loadState(); return { ...initialState, ...(saved || {}), onboarding: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted), onboardingCompleted: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted).status === 'COMPLETED', buddyActionHistory: saved?.buddyActionHistory || [] }; });
+  const [state, setState] = useState<AppState>(() => { const saved = loadState(); return ensureWorkspaceState({ ...initialState, ...(saved || {}), entitlements: getEntitlements(saved?.subscriptionPlan || initialState.subscriptionPlan, saved?.subscriptionStatus || initialState.subscriptionStatus), onboarding: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted), onboardingCompleted: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted).status === 'COMPLETED', buddyActionHistory: saved?.buddyActionHistory || [] }); });
   const [tab, setTab] = useState<TabId>('dashboard');
   const [planSection, setPlanSection] = useState<PlanSection>('musts');
   const [importReviewSection, setImportReviewSection] = useState<ImportReviewSection>('import');
@@ -279,6 +291,9 @@ export default function App() {
       buddyActionHistory: [],
       onboardingCompleted: true,
       onboarding: { ...normalizeOnboardingState(), status: 'COMPLETED', currentStep: 'finish', started: true },
+      subscriptionPlan: state.subscriptionPlan,
+      subscriptionStatus: state.subscriptionStatus,
+      entitlements: getEntitlements(state.subscriptionPlan, state.subscriptionStatus),
     });
     setOnboardingOpen(false);
     selectTab('dashboard');
@@ -305,7 +320,7 @@ export default function App() {
         <div className="mobile-brand-stack">
           <div className="mobile-brand">Klirr</div>
           <div className="mobile-tagline">Vad livet kostar varje månad</div>
-          <div className="mobile-context">{getTabLabel(tab)}</div>
+          <div className="mobile-context">{getTabLabel(tab)} · {hasEntitlement(state.entitlements, 'deepAnalysis') ? 'Premium' : 'Gratis'}</div>
         </div>
         <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Öppna meny">☰</button>
       </header>
@@ -478,7 +493,9 @@ function ImportReviewView({ active, setActive, detection, state, setPartial, loa
 
 function MoreView({ active, setActive, state, setState, onReset, loadDemo, openOnboarding }: { active: MoreSection; setActive: (s: MoreSection) => void; state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; openOnboarding: () => void }) {
   return <><PageTitle title="Mer / Inställningar" subtitle="Regler, export, sync, demo-data och inställningar." />
-    <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }]} />
+    <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'premium', label: 'Klirr Premium 💎' }, { id: 'premiumTools', label: 'Premiumverktyg' }, { id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }]} />
+    {active === 'premium' && <PremiumOverview state={state} setState={setState} setActive={setActive} />}
+    {active === 'premiumTools' && <PremiumToolsView state={state} setState={setState} summary={calculateBudget({ detection: detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions), recurringDecisions: state.recurringDecisions, incomes: state.incomes, manualExpenses: state.manualExpenses, variablePlan: state.variablePlan })} />}
     {active === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setState({ ...state, rules })} />}
     {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} openOnboarding={openOnboarding} restartOnboarding={() => { setState({ ...state, onboardingCompleted: false, onboarding: { ...normalizeOnboardingState(state.onboarding), status: 'MANUAL_PATH', path: 'manual', started: true, currentStep: 'household' } }); openOnboarding(); }} />}
   </>;
@@ -1019,6 +1036,52 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
   </>;
 }
 
+
+function PremiumBadge() { return <span className="pill">💎 Premium</span>; }
+function activatePremium(state: AppState): AppState { return { ...state, subscriptionPlan: 'pro', subscriptionStatus: 'active', entitlements: getEntitlements('pro', 'active') }; }
+function activateFree(state: AppState): AppState { return { ...state, subscriptionPlan: 'free', subscriptionStatus: 'active', entitlements: getEntitlements('free', 'active') }; }
+function PremiumGate({ state, feature, title, description, children, setState }: { state: AppState; feature: keyof NonNullable<AppState['entitlements']>; title: string; description: string; children: ReactNode; setState: (s: AppState) => void }) {
+  if (hasEntitlement(state.entitlements, feature)) return <>{children}</>;
+  return <Card className="soft"><div className="row between"><h3>{title} <PremiumBadge /></h3></div><p>{description}</p><p className="hint">Premiumdata sparas och låses bara i Gratis-läget. Ingen betalning genomförs i demon.</p><button className="btn primary" onClick={() => setState(activatePremium(state))}>Aktivera Premium i demon</button></Card>;
+}
+function DemoSubscriptionSwitch({ state, setState }: { state: AppState; setState: (s: AppState) => void }) {
+  const premium = hasEntitlement(state.entitlements, 'deepAnalysis');
+  return <Card><h3>Demo: abonnemangsläge</h3><p>Detta är en demosimulator. Ingen betalning genomförs och din Budget påverkas inte.</p><div className="segmented-control" role="radiogroup" aria-label="Demo abonnemangsläge"><button type="button" className={!premium ? 'active' : ''} aria-checked={!premium} role="radio" onClick={() => setState(activateFree(state))}>Gratis</button><button type="button" className={premium ? 'active' : ''} aria-checked={premium} role="radio" onClick={() => setState(activatePremium(state))}>Premium</button></div><p className="hint">Aktuellt läge: <b>{premium ? 'Premium' : 'Gratis'}</b>. Budgetdata, Premiumdata och extra arbetsytor raderas inte när du växlar.</p></Card>;
+}
+function PremiumOverview({ state, setState, setActive }: { state: AppState; setState: (s: AppState) => void; setActive: (s: MoreSection) => void }) {
+  const premium = hasEntitlement(state.entitlements, 'deepAnalysis');
+  const groups = [
+    ['Förstå mer', ['Fördjupad Budgetanalys', 'Budgetutveckling', 'Proaktiva insikter']],
+    ['Bygg vanor', ['Budgetmål', 'Påminnelser', 'Automatisk återgranskning']],
+    ['Organisera', ['Flera Budgetar', 'Delad Budget', 'Versioner och återställning']],
+    ['Budget Buddy+', ['Avancerade råd', 'Alternativa planer', 'Mål- och historikmedveten vägledning']],
+  ];
+  return <><PageTitle title="Klirr Premium 💎" subtitle={premium ? 'Premium är aktivt i demon.' : 'Gratis är komplett. Premium sparar tid och ger mer historik, automation och fördjupning.'} />
+    <Card className="soft"><h3>{premium ? 'Premium är aktivt i demon' : 'Ingår redan gratis'}</h3><p>Gratis innehåller hela Budgetkärnan: inkomster, fasta utgifter, rörliga utgifter, marginal, Budgethälsa, import, granskning, Budget Checkup, basic Budget Buddy, action cards, scenarier, export och grundläggande molnsynk.</p><p className="hint">Ingen betalning genomförs i demon.</p><div className="row"><button className="btn primary" onClick={() => premium ? setState(activateFree(state)) : setState(activatePremium(state))}>{premium ? 'Byt till Gratis för att testa gratisupplevelsen' : 'Aktivera Premium i demon'}</button><button className="btn" onClick={() => setActive('premiumTools')}>Öppna Premiumverktyg</button></div></Card>
+    <div className="grid grid-2">{groups.map(([title, items]) => <Card key={title as string}><h3>{title}</h3><ul>{(items as string[]).map(item => <li key={item}>{item} {!premium && <PremiumBadge />}</li>)}</ul></Card>)}</div>
+  </>;
+}
+function PremiumToolsView({ state, setState, summary }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget> }) {
+  const health = calculateBudgetHealth({ summary, detection: detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions), state });
+  const analysis = analyzePremiumBudget(summary, health.score, state, getVisibleReviewItems({ reviewItems: detectRecurring(state.transactions, state.accounts, state.rules, state.transferDecisions).reviewItems, recurringDecisions: state.recurringDecisions, reviewDecisions: state.reviewDecisions || {} }).length);
+  const insights = buildProactiveInsights(state, summary, health.score, detectPossibleIncomeDuplicates(state.incomes, summary.incomeItems).length);
+  const buckets = reminderBuckets(state.reminders || []);
+  const [goalLabel, setGoalLabel] = useState('Nå 80 % Budgethälsa'); const [reminderTitle, setReminderTitle] = useState('Kör Budget Checkup'); const [workspaceName, setWorkspaceName] = useState('Ny Budget');
+  return <><PageTitle title="Premiumverktyg" subtitle="Demo-klara Premiumfunktioner som arbetar med din aktuella Budget – inte historisk bokföring." />
+    <PremiumGate state={state} setState={setState} feature="deepAnalysis" title="Premiumverktyg är låsta i Gratis" description="Förhandsvisningen visar vad Premium lägger till: analys, mål, påminnelser, flera Budgetar, delning och versioner.">
+      <div className="grid grid-2"><Card><h3>Fördjupad Budgetanalys</h3>{analysis.nextSteps.map(i => <p key={i.title}><b>{i.title}</b><br/><span className="hint">{i.explanation} Nästa steg: {i.action}</span></p>)}<button className="btn" onClick={() => setState({ ...state, chatMessages: [...state.chatMessages, { id: uid('msg'), role: 'user', createdAt: todayIso(), content: 'Budget Buddy+: fördjupa analysen med sammanfattad Budgetkontext, utan råa transaktioner.' }] })}>Fördjupa med Budget Buddy+ ✨</button></Card>
+      <Card><h3>Proaktiva insikter</h3>{insights.length ? insights.map(i => <p key={i.key}><b>{i.title}</b> <span className="pill">{i.priority}</span><br/><span className="hint">{i.explanation}</span> <button className="btn small" onClick={() => setState({ ...state, dismissedInsightKeys: [...(state.dismissedInsightKeys || []), i.key] })}>Dölj</button></p>) : <p className="hint">Inga nya högprioriterade insikter just nu.</p>}</Card>
+      <Card><h3>Budgetutveckling</h3><button className="btn primary" onClick={() => setState(addMetricSnapshot(state, 'Manuellt sparat nuläge'))}>Spara nuläge</button>{(state.budgetMetricSnapshots || []).map(s => <p key={s.id}><b>{s.reason}</b> · Budgethälsa {s.budgetHealthScore} · Marginal {fmt(s.margin)}</p>)}</Card>
+      <Card><h3>Budgetmål</h3><label><span className="metric-label">Mål</span><input className="input" value={goalLabel} onChange={e => setGoalLabel(e.target.value)} /></label><button className="btn primary" onClick={() => setState({ ...state, budgetGoals: [...(state.budgetGoals || []), { id: uid('goal'), type: 'budget_health', label: goalLabel, targetValue: 80, createdAt: todayIso(), status: 'active' } as BudgetGoal] })}>Skapa mål</button>{(state.budgetGoals || []).map(g => { const p = goalProgress(g, summary, health.score); return <p key={g.id}><b>{g.label}</b> {Math.round(p.percent)} % · {g.status} <button className="btn small" onClick={() => setState({ ...state, budgetGoals: (state.budgetGoals || []).map(x => x.id === g.id ? { ...x, status: x.status === 'paused' ? 'active' : 'paused' } : x) })}>{g.status === 'paused' ? 'Återuppta' : 'Pausa'}</button></p>; })}</Card>
+      <Card><h3>Påminnelser</h3><p className="hint">Påminnelser visas bara inne i Klirr i denna demo.</p><input className="input" value={reminderTitle} onChange={e => setReminderTitle(e.target.value)} /><button className="btn primary" onClick={() => setState({ ...state, reminders: [...(state.reminders || []), { id: uid('rem'), title: reminderTitle, dueAt: new Date().toISOString(), recurrence: 'none', status: 'active' } as Reminder] })}>Skapa påminnelse</button><p>Förfallna: {buckets.overdue.length} · Kommande: {buckets.upcoming.length}</p></Card>
+      <Card><h3>Automatisk återgranskning</h3><p className="hint">Ändrar aldrig klassificeringar automatiskt.</p><button className="btn" onClick={() => setState({ ...state, automaticReview: { ...(state.automaticReview || { runIntervalDays: 14 }), enabled: !state.automaticReview?.enabled, lastRunAt: new Date().toISOString(), lastResult: { summary: 'Lokal demosökning klar. Inga ändringar applicerades.', unclearCount: 0, transferCount: 0, recurringCount: 0, duplicateIncomeWarnings: 0 } } })}>{state.automaticReview?.enabled ? 'Stäng av' : 'Aktivera och kör nu'}</button><p>{state.automaticReview?.lastResult?.summary}</p></Card>
+      <Card><h3>Budgetarbetsytor</h3><input className="input" value={workspaceName} onChange={e => setWorkspaceName(e.target.value)} /><button className="btn primary" onClick={() => setState(createWorkspace(state, workspaceName))}>Skapa Budget</button><button className="btn" onClick={() => setState(duplicateWorkspace(state))}>Duplicera</button>{(state.workspaces || []).map(ws => <p key={ws.id}><b>{ws.name}</b> {ws.id === state.activeBudgetId ? '(aktiv)' : ''} <button className="btn small" onClick={() => setState(switchWorkspace(state, ws.id))}>Byt</button></p>)}</Card>
+      <Card><h3>Delad Budget</h3><p className="hint">Demon skickar inga riktiga inbjudningar och har ingen realtidssynk ännu.</p>{(state.workspaces || []).find(w => w.id === state.activeBudgetId)?.members.map(m => <p key={m.id}>{m.name} · {m.role} · {m.status}</p>)}</Card>
+      <Card><h3>Versioner och återställning</h3><button className="btn primary" onClick={() => setState(createVersion(state, 'Manuell version'))}>Skapa version</button>{(state.budgetVersions || []).map(v => <p key={v.id}><b>{v.reason}</b> · {fmt(v.metrics.margin)} <button className="btn small" onClick={() => window.confirm('Återställ denna version? Nuvarande Budget sparas först som säkerhetsversion.') && setState(restoreVersion(state, v.id))}>Återställ</button></p>)}</Card></div>
+    </PremiumGate>
+  </>;
+}
+
 function SettingsView({ state, setState, onReset, loadDemo, restartOnboarding, openOnboarding }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; restartOnboarding: () => void; openOnboarding: () => void }) {
   const [importText, setImportText] = useState('');
   const exportText = JSON.stringify({ exportedAt: new Date().toISOString(), version: '1.0', state }, null, 2);
@@ -1026,14 +1089,15 @@ function SettingsView({ state, setState, onReset, loadDemo, restartOnboarding, o
   function importState() {
     try {
       const parsed = JSON.parse(importText);
-      if (parsed.state?.accounts && parsed.state?.transactions) setState(parsed.state);
-      else if (parsed.accounts && parsed.transactions) setState(parsed);
+      if (parsed.state?.accounts && parsed.state?.transactions) setState(ensureWorkspaceState({ ...parsed.state, subscriptionPlan: state.subscriptionPlan, subscriptionStatus: state.subscriptionStatus, entitlements: getEntitlements(state.subscriptionPlan, state.subscriptionStatus) }));
+      else if (parsed.accounts && parsed.transactions) setState(ensureWorkspaceState({ ...parsed, subscriptionPlan: state.subscriptionPlan, subscriptionStatus: state.subscriptionStatus, entitlements: getEntitlements(state.subscriptionPlan, state.subscriptionStatus) }));
       setImportText('');
     } catch {
       alert('Kunde inte läsa JSON. Kontrollera att du klistrat in en Klirr-export.');
     }
   }
   return <><PageTitle title="Inställningar" subtitle="Demo, integritet, export och återställning." />
+    <DemoSubscriptionSwitch state={state} setState={setState} />
     <AuthSyncPanel state={state} setState={setState} />
     <div className="grid grid-2">
       <Card><h3>Demo-läge</h3><p>Ladda om den fiktiva demo-Budgeten när du vill visa appen för andra.</p><button className="btn primary" onClick={loadDemo}>✨ Ladda demo-data</button></Card>
