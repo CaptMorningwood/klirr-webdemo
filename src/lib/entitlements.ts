@@ -1,15 +1,26 @@
 import type { Entitlements, SubscriptionPlan } from '../types';
 
-const unlocked: Entitlements = {
+const freeEntitlements: Entitlements = {
   csvImport: true,
   recurringDetection: true,
   budgetBuddy: true,
   scenarios: true,
   export: true,
   cloudSync: true,
+  premiumHub: false,
+  improvementPlan: false,
+  developmentTracking: false,
+  smartMonitoring: false,
 };
 
-export function getEntitlements(_plan: SubscriptionPlan): Entitlements {
-  // MVP foundation: all capabilities stay unlocked until real billing exists.
-  return { ...unlocked };
+const premiumEntitlements: Entitlements = {
+  ...freeEntitlements,
+  premiumHub: true,
+  improvementPlan: true,
+  developmentTracking: true,
+  smartMonitoring: true,
+};
+
+export function getEntitlements(plan: SubscriptionPlan): Entitlements {
+  return plan === 'pro' ? { ...premiumEntitlements } : { ...freeEntitlements };
 }

@@ -24,6 +24,16 @@ describe('Privacy & Trust AI context', () => {
     expect(serialized).toContain('totalIncome');
     expect(result.logEntry.containsRawTransactions).toBe(false);
   });
+
+  it('uses the same privacy boundary for Premium Buddy+ requests with workspace id', () => {
+    const consented = addConsentRecord({ ...baseState, activeWorkspaceId: 'workspace_premium', privacyPreferences: { ...defaultPrivacyPreferences(), aiEnabled: true } }, { type: 'ai_features', documentVersion: legalDocumentConfig.aiInfoVersion, status: 'accepted', source: 'settings' });
+    const result = prepareSafeAiContext({ state: consented, summary, detection, userMessage: 'Skapa min förbättringsplan', requestType: 'premium_buddy_plus', purpose: 'Premium Buddy+ fortsättning', workspaceId: 'workspace_premium', visibleReviewCount: 0, handledReviewCount: 0 });
+    expect(result.allowed).toBe(true);
+    expect(result.logEntry.requestType).toBe('premium_buddy_plus');
+    expect(result.logEntry.workspaceId).toBe('workspace_premium');
+    expect(JSON.stringify(result.allowed ? result.context : {})).not.toMatch(/originalDescription|counterparty|bankReference|balanceAfter|txIds/);
+  });
+
   it('prunes AI transparency log and export includes raw owned transactions but no token field', () => {
     const entries = Array.from({ length: 55 }, (_, i) => ({ id: `ai_${i}`, createdAt: `2026-01-${String(i + 1).padStart(2, '0')}`, purpose: 'p', requestType: 'r', summaryFields: { i }, warningsIncluded: [], dataCategories: [], containsRawTransactions: false as const, destinationLabel: 'd', outcome: 'prepared' as const }));
     expect(pruneAiLog(entries)).toHaveLength(50);

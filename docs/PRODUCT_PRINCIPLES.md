@@ -109,3 +109,5 @@ Användaren ska kunna förstå, exportera och radera sin data.
 Budget Buddy ska visa vilken sammanfattad kontext AI har fått.
 
 Den manuella Budgeten ska fungera utan AI.
+
+Klirr Premium hjälper användaren att förbättra Budgeten, följa resultatet och låta Klirr hålla koll.

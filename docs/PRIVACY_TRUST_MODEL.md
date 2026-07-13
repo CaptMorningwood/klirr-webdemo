@@ -11,3 +11,5 @@ Klirr ska låta användaren förstå, exportera och radera sin data. Modellen ä
 - Deletion: radera importerat konto, rensa aktiv Budget, radera all lokal data, radera molndata och radera användarkonto är skilda begrepp.
 - Premium: nuvarande kodbas saknar flera Epic 2-fält; exporten reserverar kategorier och markerar simulerade/tomma data.
 - Non-goals: ingen compliance-certifiering, ingen cookie banner utan tracking, ingen falsk cloud/account deletion.
+
+- Premium 2.0: lokal förbättringsplan, utvecklingssnapshots och lokal monitorering kan köras utan AI; Budget Buddy+ följer samma AI-samtycke och sammanfattade kontextgräns som Budget Buddy.

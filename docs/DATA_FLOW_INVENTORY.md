@@ -22,3 +22,5 @@ Export omfattar lokal Budget, konton, transaktioner, regler/beslut, Buddy-meddel
 
 ## AI leakage audit
 Tidigare Budget Buddy-kontext byggdes nära anropet och innehöll `summary`, `recurring` och andra objekt med transaktions-ID-risk. Nu går `/api/budget-buddy` genom `prepareSafeAiContext`, som har denylist-test för `transactions`, `raw`, `originalDescription`, `counterparty`, `bankReference`, `balanceAfter`, `txIds`, `importedRows` och `fileContent`.
+
+- Premium 2.0: förbättringsplaner härleds från aktuell Budget; mål, snapshots, monitoreringsstatus och aktiveringsstatus sparas i AppState och ingår i exporten. Lokal Premium-analys skickas inte till AI.
