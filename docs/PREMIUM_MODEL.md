@@ -40,3 +40,9 @@ This demo gating is a local UX simulator, not secure billing enforcement. Produc
 
 ## Not implemented for production
 Checkout, receipt validation, server enforcement, real invitations, real-time collaboration, push notifications, background jobs and bank connectivity remain out of scope.
+
+## Budget Buddy capability matrix
+
+Gratis inkluderar kärncapabilities: `explain_budget`, `answer_budget_question`, `explain_budget_health`, `explain_margin`, `budget_checkup`, `import_cleanup`, `basic_suggestions`, `basic_actions`, `crisis_budget` och `basic_scenarios`. De styrs av befintlig `budgetBuddy`-entitlement och inkluderar action cards, confirm, cancel, undo, trygg planner och lokalt deterministiskt fallback-läge utan meddelandekvot.
+
+Premium inkluderar alla kärncapabilities plus Budget Buddy+: `improvement_plan`, `alternative_plans`, `deep_analysis`, `goal_aware_advice`, `development_aware_advice`, `monitoring_advice` och `proactive_insight_followup`. De styrs av befintlig `budgetBuddyAdvanced`-entitlement. Premium ger inte AI-samtycke; fjärr-AI kräver alltid aktiv AI-inställning och aktuellt versionerat `ai_features`-samtycke.

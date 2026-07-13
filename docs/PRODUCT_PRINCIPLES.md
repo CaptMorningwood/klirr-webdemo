@@ -118,3 +118,6 @@ Budget Buddy ska visa vilken sammanfattad kontext AI har fått.
 
 Klirr ska inte göra påståenden om säkerhet, region, kryptering eller regelefterlevnad som inte stöds av faktisk implementation.
 
+## Budget Buddy-access
+
+Budget Buddy är en användbar kärnfunktion i Gratis. Premium låser upp hela Budget Buddy+, men kringgår aldrig AI-samtycke. Avstängd AI ska inte göra lokala Budget Buddy-funktioner oanvändbara. Planåtkomst och AI-samtycke är separata beslut.

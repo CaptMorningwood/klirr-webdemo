@@ -1,4 +1,5 @@
 import type { BuddyAction, BudgetSummary, ChatMessage, DetectionResult, Rule } from '../types';
+import type { BuddyCapability, BuddyCapabilityTier } from './budgetBuddyAccess';
 import { fmt, fmtSigned, todayIso, uid } from './format';
 import { getActionableRecurringCandidates } from './recurrenceEngine';
 
@@ -93,25 +94,33 @@ Just nu kostar din Budget ${fmt(s.totalMonthlyPlan)} och marginalen efter planen
 export type BuddySuggestionGroup = 'Förstå' | 'Förbättra' | 'Ändra' | 'Import/hjälp';
 
 export type BuddySuggestion = {
+  id: string;
   group: BuddySuggestionGroup;
   label: string;
   description?: string;
-  message?: string;
+  message: string;
+  capability: BuddyCapability;
+  tier: BuddyCapabilityTier;
 };
 
 export const buddySuggestionItems: BuddySuggestion[] = [
-  { group: 'Förstå', label: 'Förklara min Budget', description: 'Se inkomster, fasta utgifter, rörliga utgifter och marginal.' },
-  { group: 'Förstå', label: 'Vad ska jag göra först?', description: 'Få nästa steg för en mer komplett Budget.' },
-  { group: 'Förstå', label: 'Vad är oklart?', description: 'Hitta poster som behöver granskas.' },
-  { group: 'Förbättra', label: 'Vad kan jag kapa?', description: 'Se rimliga förbättringsspår.' },
-  { group: 'Förbättra', label: 'Städa min Budget', description: 'Kör en Budget Checkup.' },
-  { group: 'Förbättra', label: 'Hjälp mig förbättra Budgethälsan', description: 'Fokusera på Budgethälsa och marginal.' },
-  { group: 'Förbättra', label: 'Skapa en krisbudget', description: 'Gör ett tillfälligt stramt förslag.' },
-  { group: 'Ändra', label: 'Lägg till inkomst', description: 'Få hjälp att lägga till eller ändra inkomst.' },
-  { group: 'Ändra', label: 'Ändra fasta utgifter', description: 'Gå igenom fasta utgifter som påverkar Budgeten.' },
-  { group: 'Ändra', label: 'Ändra rörliga utgifter', description: 'Planera flexibla vardagsutgifter.' },
-  { group: 'Import/hjälp', label: 'Hur importerar jag kontoutdrag?', description: 'Få steg för bankimport.' },
-  { group: 'Import/hjälp', label: 'Hur ändrar jag konton?', description: 'Förstå konton och interna överföringar.' },
+  { id: 'explain-budget', group: 'Förstå', label: 'Förklara min Budget', description: 'Se inkomster, fasta utgifter, rörliga utgifter och marginal.', message: 'Förklara min Budget', capability: 'explain_budget', tier: 'core' },
+  { id: 'first-step', group: 'Förstå', label: 'Vad ska jag göra först?', description: 'Få nästa steg för en mer komplett Budget.', message: 'Vad ska jag göra först?', capability: 'answer_budget_question', tier: 'core' },
+  { id: 'unclear-items', group: 'Förstå', label: 'Vad är oklart?', description: 'Hitta poster som behöver granskas.', message: 'Vad är oklart?', capability: 'import_cleanup', tier: 'core' },
+  { id: 'cut-costs', group: 'Förbättra', label: 'Vad kan jag kapa?', description: 'Se rimliga förbättringsspår.', message: 'Vad kan jag kapa?', capability: 'basic_suggestions', tier: 'core' },
+  { id: 'budget-checkup', group: 'Förbättra', label: 'Städa min Budget', description: 'Kör en Budget Checkup.', message: 'Städa min Budget', capability: 'budget_checkup', tier: 'core' },
+  { id: 'health-help', group: 'Förbättra', label: 'Hjälp mig förbättra Budgethälsan', description: 'Fokusera på Budgethälsa och marginal.', message: 'Hjälp mig förbättra Budgethälsan', capability: 'explain_budget_health', tier: 'core' },
+  { id: 'crisis-budget', group: 'Förbättra', label: 'Skapa en krisbudget', description: 'Gör ett tillfälligt stramt förslag.', message: 'Skapa en krisbudget', capability: 'crisis_budget', tier: 'core' },
+  { id: 'add-income', group: 'Ändra', label: 'Lägg till inkomst', description: 'Få hjälp att lägga till eller ändra inkomst.', message: 'Lägg till inkomst', capability: 'basic_actions', tier: 'core' },
+  { id: 'edit-fixed', group: 'Ändra', label: 'Ändra fasta utgifter', description: 'Gå igenom fasta utgifter som påverkar Budgeten.', message: 'Ändra fasta utgifter', capability: 'basic_actions', tier: 'core' },
+  { id: 'edit-variable', group: 'Ändra', label: 'Ändra rörliga utgifter', description: 'Planera flexibla vardagsutgifter.', message: 'Ändra rörliga utgifter', capability: 'basic_actions', tier: 'core' },
+  { id: 'import-help', group: 'Import/hjälp', label: 'Hur importerar jag kontoutdrag?', description: 'Få steg för bankimport.', message: 'Hur importerar jag kontoutdrag?', capability: 'import_cleanup', tier: 'core' },
+  { id: 'accounts-help', group: 'Import/hjälp', label: 'Hur ändrar jag konton?', description: 'Förstå konton och interna överföringar.', message: 'Hur ändrar jag konton?', capability: 'import_cleanup', tier: 'core' },
+  { id: 'premium-improvement-plan', group: 'Förbättra', label: 'Skapa min förbättringsplan', description: 'Prioriterar upp till tre åtgärder och uppskattar möjlig effekt.', message: 'Skapa min förbättringsplan', capability: 'improvement_plan', tier: 'advanced' },
+  { id: 'premium-alternatives', group: 'Förbättra', label: 'Visa tre alternativa planer', description: 'Jämför Trygg, Balanserad och Mer offensiv.', message: 'Visa tre alternativa planer', capability: 'alternative_plans', tier: 'advanced' },
+  { id: 'premium-goal', group: 'Förbättra', label: 'Hjälp mig nå mitt viktigaste mål', description: 'Kopplar råden till ditt aktiva Budgetmål.', message: 'Hjälp mig nå mitt viktigaste mål', capability: 'goal_aware_advice', tier: 'advanced' },
+  { id: 'premium-development', group: 'Förstå', label: 'Förklara min Budgetutveckling', description: 'Använder sparade nulägen och förändringar.', message: 'Förklara min Budgetutveckling', capability: 'development_aware_advice', tier: 'advanced' },
+  { id: 'premium-monitoring', group: 'Förbättra', label: 'Prioritera vad Klirr ska hålla koll på', description: 'Prioriterar vad Klirr ska hålla koll på.', message: 'Prioritera vad Klirr ska hålla koll på', capability: 'monitoring_advice', tier: 'advanced' },
 ];
 
 export const buddySuggestions = buddySuggestionItems.map(item => item.label);

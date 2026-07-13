@@ -21,3 +21,10 @@ Use this checklist on mobile (320–430px) and desktop.
 17. Premium export/deletion: export data and verify Premium + Privacy state are included; clear active Budget and verify consent history remains.
 18. Free/Premium switching with Privacy: verify AI preferences, consent records and AI logs survive plan switching.
 19. Accessibility: keyboard-operate the plan switch, Premium actions and Privacy controls; locked/blocked states have text explanations.
+
+## Budget Buddy-access QA
+
+- Gratis: öppna Budget Buddy och kontrollera `Gratis · Grundläggande Buddy` och `Lokalt läge`; kärnfrågor, Budget Checkup, importstädning, krisbudget och action cards ska fungera lokalt utan AI.
+- Gratis + avancerat snabbval: visa Premiumförhandsvisning, gör inget API-anrop och erbjud `Aktivera Premium i demon` samt `Fortsätt med grundläggande Buddy`.
+- Premium: alla Budget Buddy+-snabbval är olåsta, men fjärr-AI visar inline-kortet `Aktivera Budget Buddy AI ✨` tills AI-inställning och aktuellt samtycke finns.
+- Planväxling ska aldrig ändra AI-inställning eller samtyckeshistorik. AI-aktivering ska aldrig ändra plan eller entitlements.

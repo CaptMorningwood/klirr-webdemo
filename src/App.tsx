@@ -3,7 +3,7 @@ import type { Account, AppState, BudgetGoal, BuddyAction, BuddyProposedAction, C
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
-import { buddySuggestionItems, initialBuddyMessage, makeBuddyReply, type BuddySuggestionGroup } from './lib/budgetBuddy';
+import { buddySuggestionItems, initialBuddyMessage, makeBuddyReply, type BuddySuggestion, type BuddySuggestionGroup } from './lib/budgetBuddy';
 import { knowledgeBaseCategories } from './data/recurringKnowledgeBase';
 import { BANK_FORMATS, type BankKey, detectBank, guessMapping, parseCsvToRows, parseRowsWithMapping, readCsvTable, rowsToTransactions, transactionFingerprint } from './lib/csvParsers';
 import { decodeTextFile } from './lib/fileDecoding';
@@ -16,6 +16,7 @@ import { actionableCandidateReason, detectRecurring, getActionableRecurringCandi
 import { detectPossibleIncomeDuplicates, getUnifiedIncomeItems } from './lib/incomeReconciliation';
 import { countHandledReviewItems, getVisibleReviewItems } from './lib/reviewVisibility';
 import { getEntitlements, hasEntitlement } from './lib/entitlements';
+import { buddyCapabilityInfo, buddyCapabilityTier, classifyBuddyRequest, hasBuddyCapability, premiumPreviewText, type BuddyCapability } from './lib/budgetBuddyAccess';
 import { clearState, loadState, saveState } from './lib/storage';
 import { addMetricSnapshot, createVersion, createWorkspace, duplicateWorkspace, ensureWorkspaceState, restoreVersion, switchWorkspace } from './lib/premiumWorkspace';
 import { analyzePremiumBudget, goalProgress, reminderBuckets } from './lib/premiumBudgetAnalysis';
@@ -101,6 +102,8 @@ type PlanSection = 'musts' | 'variablePlan' | 'scenarios';
 type ImportReviewSection = 'import' | 'accounts' | 'transactions' | 'transfers' | 'recurring' | 'review';
 type HouseholdSection = 'profile' | 'income';
 type MoreSection = 'rules' | 'settings' | 'privacy';
+type PendingBuddyRequest = { id: string; text: string; capability: BuddyCapability; source: 'composer' | 'quick_choice' | 'handoff' | 'action'; userMessageId?: string; requestedAt: string; planGateReason?: string; aiGateReason?: string; resumed?: boolean };
+type BuddySendOptions = { capability?: BuddyCapability; source?: PendingBuddyRequest['source']; appendUserMessage?: boolean; pending?: PendingBuddyRequest; forceLocal?: boolean };
 
 const legacyTabMap: Partial<Record<TabId, { tab: TabId; section?: PlanSection | ImportReviewSection | HouseholdSection | MoreSection }>> = {
   musts: { tab: 'plan', section: 'musts' },
@@ -556,6 +559,7 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
   const [buddyBusy, setBuddyBusy] = useState(false);
   const [composerComposing, setComposerComposing] = useState(false);
   const [quickChoicesOpen, setQuickChoicesOpen] = useState(false);
+  const [pendingBuddyRequest, setPendingBuddyRequest] = useState<PendingBuddyRequest | null>(null);
   const quickChoicesId = useId();
   const quickChoicesRef = useRef<HTMLDivElement | null>(null);
   const quickChoicesTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -598,6 +602,14 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
     };
   }, [quickChoicesOpen]);
 
+
+  useEffect(() => {
+    if (!pendingBuddyRequest?.resumed || buddyBusy) return;
+    const pending = pendingBuddyRequest;
+    setPendingBuddyRequest(null);
+    void send(pending.text, { capability: pending.capability, source: pending.source, appendUserMessage: false, pending });
+  }, [pendingBuddyRequest?.id, pendingBuddyRequest?.resumed, buddyBusy, state.entitlements, state.privacyPreferences, state.consentRecords]);
+
   function updateActionStatus(actionId: string, status: BuddyProposedAction['status'], baseState = state) {
     return { ...baseState, chatMessages: baseState.chatMessages.map(m => m.proposedAction?.id === actionId ? { ...m, proposedAction: { ...m.proposedAction, status } as BuddyProposedAction } : m) };
   }
@@ -614,41 +626,120 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
     const msg: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `${result.message}${healthText}`.trim() };
     setState({ ...finalState, chatMessages: [...finalState.chatMessages, msg] });
   }
-  async function send(text: string) {
+  function buildLocalBuddyReply(text: string, baseState = state): ChatMessage {
+    const localContext = { summary, detection, rules: baseState.rules, transactionCount: baseState.transactions.length };
+    const reply = makeBuddyReply(text, localContext);
+    const localPlan = planBuddyAction({ message: text, context: localContext, incomes: baseState.incomes, variablePlan: baseState.variablePlan, householdProfile: baseState.householdProfile });
+    return { ...reply, content: `Lokalt läge
+
+${reply.content}`, proposedAction: localPlan.proposedAction || reply.proposedAction };
+  }
+  function premiumPreviewMessage(pending: PendingBuddyRequest): ChatMessage {
+    const details = buddyCapabilityInfo(pending.capability);
+    return { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `Premiumförhandsvisning · ${details.label}
+
+${premiumPreviewText(pending.capability)}
+
+Kort förhandsvisning utifrån din Budget: marginalen är ${fmtSigned(summary.remainingAfterPlan)} och Budgethälsan kan prioriteras utan att något ändras automatiskt.
+
+Planåtkomst och AI-samtycke är separata beslut. Premium aktiverar inte AI.`, actions: [
+      { label: 'Aktivera Premium i demon', message: `__activate_premium__:${pending.id}` },
+      { label: 'Fortsätt med grundläggande Buddy', message: `__continue_local__:${pending.id}` },
+    ] };
+  }
+  function aiActivationMessage(pending: PendingBuddyRequest): ChatMessage {
+    return { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `Aktivera Budget Buddy AI ✨
+
+Klirr kan skicka en sammanfattad Budgetkontext till AI för ett mer fritt svar. Råa importerade transaktionsrader skickas inte. Du kan granska “Vad AI såg” efteråt och stänga av AI igen. Budget Buddy-kärnan fungerar även utan AI.`, actions: [
+      { label: 'Aktivera Budget Buddy', message: `__activate_ai__:${pending.id}` },
+      { label: 'Fortsätt utan AI', message: `__continue_local__:${pending.id}` },
+      { label: 'Läs hur AI används', message: `__read_ai_info__:${pending.id}` },
+    ] };
+  }
+  function resumePending(pending: PendingBuddyRequest) {
+    if (pending.resumed) return;
+    setPendingBuddyRequest({ ...pending, resumed: true });
+  }
+  async function send(text: string, options: BuddySendOptions = {}) {
     const trimmed = text.trim();
     if (!trimmed || buddyBusy) return;
+    if (trimmed.startsWith('__activate_premium__:')) {
+      const id = trimmed.split(':')[1];
+      const pending = pendingBuddyRequest?.id === id ? pendingBuddyRequest : null;
+      const premiumState = activatePremium(state);
+      setState(premiumState);
+      if (pending) resumePending(pending);
+      return;
+    }
+    if (trimmed.startsWith('__activate_ai__:')) {
+      const id = trimmed.split(':')[1];
+      const pending = pendingBuddyRequest?.id === id ? pendingBuddyRequest : null;
+      const next = addConsentRecord({ ...normalizePrivacyState(state), privacyPreferences: { ...(state.privacyPreferences || defaultPrivacyPreferences()), aiEnabled: true } }, { type: 'ai_features', documentVersion: legalDocumentConfig.aiInfoVersion, status: 'accepted', source: 'settings', locale: 'sv-SE' });
+      setState(next);
+      if (pending) resumePending(pending);
+      return;
+    }
+    if (trimmed.startsWith('__continue_local__:')) {
+      const id = trimmed.split(':')[1];
+      const pending = pendingBuddyRequest?.id === id ? pendingBuddyRequest : null;
+      if (pending) {
+        setPendingBuddyRequest(null);
+        const reply = buildLocalBuddyReply(pending.text);
+        setState({ ...state, chatMessages: [...state.chatMessages, reply] });
+      }
+      return;
+    }
+    if (trimmed.startsWith('__read_ai_info__:')) {
+      setTab('more');
+      setState({ ...state, chatMessages: [...state.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: 'Jag öppnade Mer → Sekretess & data. Ingen AI aktiverades och inget samtycke skapades.' }] });
+      return;
+    }
     const pending = findPendingBuddyAction(state);
     const intent = pending ? detectBuddyActionIntent(trimmed) : null;
-    const userMsg: ChatMessage = { id: uid('msg'), role: 'user', content: trimmed, createdAt: todayIso() };
-    const afterUserState = { ...state, chatMessages: [...state.chatMessages, userMsg] };
+    const shouldAppendUser = options.appendUserMessage !== false;
+    const userMsg: ChatMessage | null = shouldAppendUser ? { id: uid('msg'), role: 'user', content: trimmed, createdAt: todayIso() } : null;
+    const afterUserState = userMsg ? { ...state, chatMessages: [...state.chatMessages, userMsg] } : state;
     setDraft('');
     setQuickChoicesOpen(false);
     if (pending && intent) {
       applyOrCancel(pending, intent, afterUserState);
       return;
     }
-    const isPremiumBuddyRequest = /förbättringsplan|alternativa planer|viktigaste mål|Budgetutveckling|hålla koll|Buddy\+/i.test(trimmed);
-    const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: isPremiumBuddyRequest ? 'premium_buddy_plus' : 'budget_buddy_chat', purpose: isPremiumBuddyRequest ? 'Premium Buddy+ fortsättning' : 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount, workspaceId: state.activeWorkspaceId });
-    if (!safeAi.allowed) {
-      const blockedState = appendAiLog(afterUserState, safeAi.logEntry);
-      setState({ ...blockedState, chatMessages: [...blockedState.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `${safeAi.reason}\n\nBudgeten fungerar även utan AI. Du kan fortsätta importera, granska och ändra Budgeten manuellt. Gå till Mer → Sekretess & data om du vill aktivera AI.` }] });
+    const capability = classifyBuddyRequest(trimmed, options.capability);
+    const request: PendingBuddyRequest = options.pending || { id: uid('buddy_req'), text: trimmed, capability, source: options.source || 'composer', userMessageId: userMsg?.id, requestedAt: todayIso() };
+    if (!hasBuddyCapability(afterUserState.entitlements, capability)) {
+      const gated = { ...request, planGateReason: 'premium_required' };
+      setPendingBuddyRequest(gated);
+      setState({ ...afterUserState, chatMessages: [...afterUserState.chatMessages, premiumPreviewMessage(gated)] });
       return;
     }
+    const localPlan = planBuddyAction({ message: trimmed, context: { summary, detection, rules: afterUserState.rules }, incomes: afterUserState.incomes, variablePlan: afterUserState.variablePlan, householdProfile: afterUserState.householdProfile, pendingAction: pending });
+    const remoteUseful = !options.forceLocal && (buddyCapabilityTier(capability) === 'advanced' || localPlan.intent === 'none' || /ai|djup|fördjup|analysera|varför/i.test(trimmed));
+    if (!remoteUseful || options.forceLocal) {
+      setPendingBuddyRequest(null);
+      const reply = buildLocalBuddyReply(trimmed, afterUserState);
+      setState({ ...afterUserState, chatMessages: [...afterUserState.chatMessages, reply] });
+      return;
+    }
+    const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: buddyCapabilityTier(capability) === 'advanced' ? 'premium_buddy_plus' : 'budget_buddy_chat', purpose: buddyCapabilityTier(capability) === 'advanced' ? 'Premium Buddy+ fortsättning' : 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount, workspaceId: state.activeWorkspaceId });
+    if (!safeAi.allowed) {
+      const gated = { ...request, aiGateReason: safeAi.logEntry.failureReason || safeAi.reason };
+      setPendingBuddyRequest(gated);
+      const blockedState = appendAiLog(afterUserState, safeAi.logEntry);
+      setState({ ...blockedState, chatMessages: [...blockedState.chatMessages, aiActivationMessage(gated)] });
+      return;
+    }
+    setPendingBuddyRequest(null);
     setState(afterUserState);
     setBuddyBusy(true);
     try {
       const currentDate = new Date().toISOString();
-      const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: trimmed.toLowerCase().includes('kris') ? 'crisis' : 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
-      const actionableCandidates = getActionableRecurringCandidates(detection.recurring);
-      const completion = calculateBudgetCompletion({ state, summary, detection, visibleReviewCount, handledReviewCount });
-      const ob = normalizeOnboardingState(state.onboarding, state.onboardingCompleted);
-      const context = safeAi.context;
-      const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
+      const context = { ...safeAi.context, capability, capabilityTier: buddyCapabilityTier(capability) };
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
-      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
+      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1, capability, capabilityTier: buddyCapabilityTier(capability) }) });
       const data = await response.json();
       const proposedAction = data.proposedAction || localPlan.proposedAction;
-      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || 'Jag kunde inte svara just nu. Inga ändringar gjordes.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
+      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || buildLocalBuddyReply(trimmed, afterUserState).content, createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
       let nextState: AppState = appendAiLog({ ...state, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(state.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : state.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : state.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || state.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : state.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: 'sent' });
       if (proposedAction) {
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: proposedAction.type === 'choose_income_to_update' ? 'needs_user_choice' : 'proposed', message: trimmed, reason: localPlan.explanationHints?.join(' ') });
@@ -658,19 +749,19 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       }
       setState(nextState);
     } catch {
-      const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
-      setState({ ...state, chatMessages: [...afterUserState.chatMessages, { ...reply, content: `${reply.content}
+      const reply = buildLocalBuddyReply(trimmed, afterUserState);
+      setState({ ...afterUserState, chatMessages: [...afterUserState.chatMessages, { ...reply, content: `${reply.content}
 
-Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — detta är ett lokalt tryggt fallback-svar.` }] });
+AI var tillfälligt otillgänglig, så jag svarade tryggt lokalt. Inga ändringar gjordes utan bekräftelse.` }] });
     } finally {
       setBuddyBusy(false);
     }
   }
   function undoLast() { const result = undoLastBuddyAction(state); setState({ ...result.state, chatMessages: [...result.state.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: result.message }] }); }
-  function handleSuggestion(suggestion: string) {
+  function handleSuggestion(suggestion: BuddySuggestion) {
     setQuickChoicesOpen(false);
     quickChoicesTriggerRef.current?.focus();
-    void send(suggestion);
+    void send(suggestion.message, { capability: suggestion.capability, source: 'quick_choice' });
   }
   function handleComposerSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -686,7 +777,7 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
   function runAction(action: NonNullable<ChatMessage['actions']>[number]) {
     if (action.tab) setTab(action.tab);
     if (action.scenarioOffIds) setScenarioOff(action.scenarioOffIds);
-    if (action.message) send(action.message);
+    if (action.message) send(action.message, { source: 'action' });
   }
   function actionSummary(action: BuddyProposedAction) {
     const riskText = action.riskLevel === 'high' ? 'Hög risk — dubbelkolla extra' : action.riskLevel === 'medium' ? 'Medelrisk — kräver tydligt ja' : action.riskLevel === 'low' ? 'Låg risk' : null;
@@ -706,12 +797,12 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     return <div className="stack">{preview}<p className="hint">Ingen direkt ändring görs utan bekräftelse.</p></div>;
   }
   return <Card className="chat-shell">
-    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div>
+    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>{hasEntitlement(state.entitlements, 'budgetBuddyAdvanced') ? 'Premium · Budget Buddy+' : 'Gratis · Grundläggande Buddy'} · {state.privacyPreferences?.aiEnabled && hasAcceptedConsent(state, 'ai_features', legalDocumentConfig.aiInfoVersion) ? 'AI aktiv · sammanfattad kontext' : 'Lokalt läge'}{state.privacyPreferences?.aiEnabled && hasAcceptedConsent(state, 'ai_features', legalDocumentConfig.aiInfoVersion) ? <button className="btn small ghost" type="button" onClick={() => setTab('more')}>Se vad AI såg</button> : null}</p><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div>
     <div className="chat-messages" ref={scrollRef}>
       {state.chatMessages.map((m, index) => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box action-card"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row action-card-controls"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className={`pill ${m.proposedAction.status === 'applied' ? 'green' : m.proposedAction.status === 'cancelled' ? 'danger' : 'warn'}`} aria-live="polite">{m.proposedAction.status === 'pending' ? 'Föreslagen · inte ändrad än' : m.proposedAction.status === 'applied' ? 'Applicerad · Budgeten ändrad' : m.proposedAction.status === 'cancelled' ? 'Avbruten · inget ändrat' : m.proposedAction.status}</span></div></div>}{m.content.toLowerCase().includes('ångra') && <div className="message-actions"><button className="btn small" onClick={undoLast}>Ångra senaste</button></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div className="chat-footer">
-      <div className="quick-choice-anchor"><button ref={quickChoicesTriggerRef} className="btn small ghost quick-choice-trigger" type="button" aria-haspopup="dialog" aria-expanded={quickChoicesOpen} aria-controls={quickChoicesId} disabled={buddyBusy} onClick={() => setQuickChoicesOpen(open => !open)}>Snabbval ✨</button>{quickChoicesOpen && <div id={quickChoicesId} ref={quickChoicesRef} className="quick-choice-popover" role="dialog" aria-modal="false" aria-labelledby={`${quickChoicesId}-title`}><div className="quick-choice-head"><h3 id={`${quickChoicesId}-title`}>Vad vill du ha hjälp med?</h3><button className="btn small ghost" type="button" onClick={() => { setQuickChoicesOpen(false); quickChoicesTriggerRef.current?.focus(); }} aria-label="Stäng snabbval">×</button></div>{(['Förstå', 'Förbättra', 'Ändra', 'Import/hjälp'] as BuddySuggestionGroup[]).map(group => <section className="quick-choice-group" key={group} aria-labelledby={`${quickChoicesId}-${group}`}><h4 id={`${quickChoicesId}-${group}`}>{group}</h4>{buddySuggestionItems.filter(item => item.group === group).map(item => <button data-suggestion-item="true" className="quick-choice-item" type="button" key={item.label} onClick={() => handleSuggestion(item.message || item.label)}><span><b>{item.label}</b>{item.description && <small>{item.description}</small>}</span><span aria-hidden="true">›</span></button>)}</section>)}<section className="quick-choice-group" aria-labelledby={`${quickChoicesId}-premium`}><h4 id={`${quickChoicesId}-premium`}>Premium</h4>{['Skapa min förbättringsplan','Visa tre alternativa planer','Hjälp mig nå mitt viktigaste mål','Förklara min Budgetutveckling','Prioritera vad Klirr ska hålla koll på'].map(label => <button data-suggestion-item="true" className="quick-choice-item" type="button" key={label} onClick={() => handleSuggestion(label)}><span><b>{label}</b><small>Budget Buddy+ använder samma AI-samtycke och sammanfattade kontext.</small></span><span aria-hidden="true">›</span></button>)}</section></div>}</div><form className="chat-input" onSubmit={handleComposerSubmit}><textarea className="textarea" rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={handleComposerKeyDown} onCompositionStart={() => setComposerComposing(true)} onCompositionEnd={() => setComposerComposing(false)} placeholder="Fråga om din Budget…" /><button className="btn primary send-button" type="submit" disabled={buddyBusy || !draft.trim()} aria-label="Skicka meddelande"><span className="send-button-label">{buddyBusy ? 'Tänker…' : 'Skicka'}</span><span className="send-button-icon" aria-hidden="true">➤</span></button></form>
+      <div className="quick-choice-anchor"><button ref={quickChoicesTriggerRef} className="btn small ghost quick-choice-trigger" type="button" aria-haspopup="dialog" aria-expanded={quickChoicesOpen} aria-controls={quickChoicesId} disabled={buddyBusy} onClick={() => setQuickChoicesOpen(open => !open)}>Snabbval ✨</button>{quickChoicesOpen && <div id={quickChoicesId} ref={quickChoicesRef} className="quick-choice-popover" role="dialog" aria-modal="false" aria-labelledby={`${quickChoicesId}-title`}><div className="quick-choice-head"><h3 id={`${quickChoicesId}-title`}>Vad vill du ha hjälp med?</h3><button className="btn small ghost" type="button" onClick={() => { setQuickChoicesOpen(false); quickChoicesTriggerRef.current?.focus(); }} aria-label="Stäng snabbval">×</button></div>{(['Förstå', 'Förbättra', 'Ändra', 'Import/hjälp'] as BuddySuggestionGroup[]).map(group => <section className="quick-choice-group" key={group} aria-labelledby={`${quickChoicesId}-${group}`}><h4 id={`${quickChoicesId}-${group}`}>{group}</h4>{buddySuggestionItems.filter(item => item.group === group).map(item => { const locked = item.tier === 'advanced' && !hasBuddyCapability(state.entitlements, item.capability); return <button data-suggestion-item="true" className="quick-choice-item" type="button" key={item.id} onClick={() => handleSuggestion(item)}><span><b>{item.label} {locked ? '· Premium' : ''}</b>{item.description && <small>{item.description}</small>}</span><span aria-hidden="true">›</span></button>; })}</section>)}</div>}</div><form className="chat-input" onSubmit={handleComposerSubmit}><textarea className="textarea" rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={handleComposerKeyDown} onCompositionStart={() => setComposerComposing(true)} onCompositionEnd={() => setComposerComposing(false)} placeholder="Fråga om din Budget…" /><button className="btn primary send-button" type="submit" disabled={buddyBusy || !draft.trim()} aria-label="Skicka meddelande"><span className="send-button-label">{buddyBusy ? 'Tänker…' : 'Skicka'}</span><span className="send-button-icon" aria-hidden="true">➤</span></button></form>
       {buddyBusy && <p className="thinking-note" role="status">Budget Buddy tänker…</p>}
     </div>
   </Card>;

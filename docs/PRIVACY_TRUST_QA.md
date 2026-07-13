@@ -13,3 +13,10 @@ Kör på desktop och 320/360/375/390/414/430 px.
 9. Öppna juridiska utkast och kontrollera placeholders.
 10. Bekräfta ingen cookie banner och att analytics/marketing inte har aktiv toggle.
 11. Växla Free/Premium demo om tillgängligt och kontrollera att samtycken inte ändras.
+
+## Budget Buddy local/AI QA
+
+- Med AI av: grundläggande Budget Buddy ska ge lokala svar och action cards utan att skapa samtycke eller anropa `/api/budget-buddy`.
+- När AI behövs: samtalet visar inline-kortet `Aktivera Budget Buddy AI ✨` med valen aktivera, fortsätt utan AI och läs hur AI används.
+- Aktivering från Buddy ska sätta `aiEnabled`, lägga till aktuellt versionerat `ai_features`-samtycke och återuppta frågan en gång utan dubblettbubbla.
+- `Fortsätt utan AI` och integritetslänken får inte skapa samtycke.

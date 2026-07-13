@@ -13,3 +13,7 @@ Klirr ska låta användaren förstå, exportera och radera sin data. Modellen ä
 - Non-goals: ingen compliance-certifiering, ingen cookie banner utan tracking, ingen falsk cloud/account deletion.
 
 - Premium 2.0: lokal förbättringsplan, utvecklingssnapshots och lokal monitorering kan köras utan AI; Budget Buddy+ följer samma AI-samtycke och sammanfattade kontextgräns som Budget Buddy.
+
+## Budget Buddy AI separation
+
+Planåtkomst och AI-samtycke är separata beslut. Budget Buddy-kärnan i Gratis ska fungera lokalt när AI är avstängd eller samtycke saknas. Premium låser upp Budget Buddy+-capabilities men kringgår aldrig `prepareSafeAiContext`, denylist-kontrollen, versionerat `ai_features`-samtycke eller “Vad AI såg”-loggen.
