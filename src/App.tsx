@@ -30,8 +30,9 @@ import { budgetHealthImprovementMessage, budgetHealthNextSteps, budgetHealthShor
 import { buildBudgetDistribution, groupVariableDistribution, incomeSourceDistribution, marginSafety, mustsStatus, type Segment } from './lib/homeVisuals';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
-import { addConsentRecord, appendAiLog, buildDataExport, defaultPrivacyPreferences, hasAcceptedConsent, legalDocumentConfig, normalizePrivacyState, withdrawAiConsent } from './lib/privacy';
+import { appendAiLog, buildDataExport, defaultPrivacyPreferences, hasAcceptedConsent, legalDocumentConfig, normalizePrivacyState, withdrawAiConsent } from './lib/privacy';
 import { prepareSafeAiContext } from './lib/aiPrivacy';
+import { activateBudgetBuddyAi, disableBudgetBuddyAi, getBudgetBuddyAiStatus, type BudgetBuddyAiStatus as BudgetBuddyAiStatusValue } from './lib/budgetBuddyAiAccess';
 import licenseArtifact from './generated/licenses.json';
 
 const defaultVariablePlan: VariablePlanItem[] = [
@@ -97,6 +98,7 @@ type PlanSection = 'musts' | 'variablePlan' | 'scenarios';
 type ImportReviewSection = 'import' | 'accounts' | 'transactions' | 'transfers' | 'recurring' | 'review';
 type HouseholdSection = 'profile' | 'income';
 type MoreSection = 'rules' | 'settings' | 'privacy';
+type PrivacyFocus = 'ai_information' | 'ai_log' | 'ai_controls';
 
 const legacyTabMap: Partial<Record<TabId, { tab: TabId; section?: PlanSection | ImportReviewSection | HouseholdSection | MoreSection }>> = {
   musts: { tab: 'plan', section: 'musts' },
@@ -241,6 +243,7 @@ const [state, setState] = useState<AppState>(() => { const saved = loadState(); 
   const [importReviewSection, setImportReviewSection] = useState<ImportReviewSection>('import');
   const [householdSection, setHouseholdSection] = useState<HouseholdSection>('profile');
   const [moreSection, setMoreSection] = useState<MoreSection>('settings');
+  const [privacyFocus, setPrivacyFocus] = useState<PrivacyFocus | undefined>();
   const [loaded, setLoaded] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [buddyAutoMessage, setBuddyAutoMessage] = useState('');
@@ -269,6 +272,13 @@ const [state, setState] = useState<AppState>(() => { const saved = loadState(); 
   const badges: Partial<Record<TabId, number>> = {
     importReview: visibleReviewItems.length + detection.transfers.filter(t => !state.transferDecisions[t.id]?.status || state.transferDecisions[t.id].status === 'pending').length + getActionableRecurringCandidates(detection.recurring).filter(r => !state.recurringDecisions[r.id]?.status).length,
   };
+
+  function openPrivacyFocus(focus: PrivacyFocus) {
+    setMoreSection('privacy');
+    setPrivacyFocus(focus);
+    setTab('more');
+    setMobileMenuOpen(false);
+  }
 
   function selectTab(nextTab: TabId) {
     setOnboardingOpen(false);
@@ -305,6 +315,9 @@ const [state, setState] = useState<AppState>(() => { const saved = loadState(); 
       subscriptionPlan: state.subscriptionPlan,
       subscriptionStatus: state.subscriptionStatus,
       entitlements: getEntitlements(state.subscriptionPlan, state.subscriptionStatus),
+      privacyPreferences: state.privacyPreferences,
+      consentRecords: state.consentRecords,
+      aiContextLog: state.aiContextLog,
     });
     setOnboardingOpen(false);
     selectTab('dashboard');
@@ -357,12 +370,12 @@ const [state, setState] = useState<AppState>(() => { const saved = loadState(); 
 
       <main className="main">
         {showOnboarding && <OnboardingView initialState={initialState} state={state} setState={setState} loadDemo={loadDemo} setTab={selectTab} onExit={() => setOnboardingOpen(false)} />}
-        {!showOnboarding && appAccessible && tab === 'dashboard' && <DashboardView summary={summary} budgetHealth={budgetHealth} budgetCompletion={budgetCompletion} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} hasData={hasAnyBudgetData} onboarding={state.onboarding} dismissFirstRunGuide={() => setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), firstRunGuideDismissed: true } })} onExport={() => exportBudgetReport(summary, detection)} onImproveBudgetHealth={() => { setBuddyAutoMessage(budgetHealthImprovementMessage); selectTab('buddy'); }} />}
+        {!showOnboarding && appAccessible && tab === 'dashboard' && <DashboardView state={state} setState={setState} summary={summary} budgetHealth={budgetHealth} budgetCompletion={budgetCompletion} detection={detection} visibleReviewCount={visibleReviewItems.length} loadDemo={loadDemo} setTab={selectTab} openPrivacyAiInfo={() => openPrivacyFocus('ai_information')} openPrivacyAiLog={() => openPrivacyFocus('ai_log')} hasData={hasAnyBudgetData} onboarding={state.onboarding} dismissFirstRunGuide={() => setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), firstRunGuideDismissed: true } })} onExport={() => exportBudgetReport(summary, detection)} onImproveBudgetHealth={() => { setBuddyAutoMessage(budgetHealthImprovementMessage); selectTab('buddy'); }} />}
         {!showOnboarding && appAccessible && tab === 'plan' && <PlanView active={planSection} setActive={setPlanSection} summary={summary} scenarioSummary={scenarioSummary} detection={detection} state={state} setState={setState} setVariablePlan={(variablePlan) => setPartial({ variablePlan })} />}
         {!showOnboarding && appAccessible && tab === 'importReview' && <ImportReviewView active={importReviewSection} setActive={setImportReviewSection} detection={detection} state={state} setPartial={setPartial} loadDemo={loadDemo} setTab={selectTab} visibleReviewItems={visibleReviewItems} onBuddyCleanup={() => { setBuddyAutoMessage(importBuddyCleanupMessage); selectTab('buddy'); }} onboardingActive={normalizeOnboardingState(state.onboarding, state.onboardingCompleted).status === 'IMPORT_PATH'} onContinueOnboarding={() => { setPartial({ onboarding: { ...normalizeOnboardingState(state.onboarding), path: 'import', started: true, importCompleted: true, currentStep: 'importReview' } }); setTab('dashboard'); setOnboardingOpen(true); }} />}
         {!showOnboarding && appAccessible && tab === 'household' && <HouseholdView active={householdSection} setActive={setHouseholdSection} householdProfile={state.householdProfile} setHouseholdProfile={(householdProfile) => setPartial({ householdProfile })} incomes={state.incomes} setIncomes={(incomes) => setPartial({ incomes })} summary={summary} detection={detection} recurringDecisions={state.recurringDecisions} setRecurringDecisions={(recurringDecisions) => setPartial({ recurringDecisions })} />}
-        {!showOnboarding && appAccessible && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} autoMessage={buddyAutoMessage || (!state.onboardingCompleted && normalizeOnboardingState(state.onboarding).currentStep === 'buddyCheckup' ? budgetBuddyCheckupMessage : '')} onAutoMessageHandled={() => setBuddyAutoMessage('')} />}
-        {!showOnboarding && appAccessible && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} state={state} setState={setState} loadDemo={loadDemo} openOnboarding={() => { setTab('dashboard'); setOnboardingOpen(true); }} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false, onboarding: normalizeOnboardingState() }); selectTab('dashboard'); }} />}
+        {!showOnboarding && appAccessible && tab === 'buddy' && <BudgetBuddyView state={state} setState={setState} summary={summary} detection={detection} visibleReviewCount={visibleReviewItems.length} handledReviewCount={handledReviewCount} possibleIncomeDuplicates={possibleIncomeDuplicates} setTab={selectTab} openPrivacyAiInfo={() => openPrivacyFocus('ai_information')} openPrivacyAiLog={() => openPrivacyFocus('ai_log')} setScenarioOff={(ids) => setPartial({ scenarioOff: ids })} autoMessage={buddyAutoMessage || (!state.onboardingCompleted && normalizeOnboardingState(state.onboarding).currentStep === 'buddyCheckup' ? budgetBuddyCheckupMessage : '')} onAutoMessageHandled={() => setBuddyAutoMessage('')} />}
+        {!showOnboarding && appAccessible && tab === 'more' && <MoreView active={moreSection} setActive={setMoreSection} privacyFocus={privacyFocus} onPrivacyFocusHandled={() => setPrivacyFocus(undefined)} state={state} setState={setState} loadDemo={loadDemo} openOnboarding={() => { setTab('dashboard'); setOnboardingOpen(true); }} onReset={() => { clearState(); setState({ ...initialState, onboardingCompleted: false, onboarding: normalizeOnboardingState() }); selectTab('dashboard'); }} />}
       </main>
 
       <nav className="mobile-bottom-nav" aria-label="Viktigaste funktioner">
@@ -427,7 +440,31 @@ function OnboardingView({ initialState, state, setState, loadDemo, setTab, onExi
   </>;
 }
 
-function DashboardView({ summary, budgetHealth, budgetCompletion, detection, visibleReviewCount, loadDemo, setTab, hasData, onboarding, dismissFirstRunGuide, onExport, onImproveBudgetHealth }: { summary: ReturnType<typeof calculateBudget>; budgetHealth: ReturnType<typeof calculateBudgetHealth>; budgetCompletion: ReturnType<typeof calculateBudgetCompletion>; detection: DetectionResult; visibleReviewCount: number; loadDemo: () => void; setTab: (t: TabId) => void; hasData: boolean; onboarding?: AppState['onboarding']; dismissFirstRunGuide: () => void; onExport: () => void; onImproveBudgetHealth: () => void }) {
+
+function budgetBuddyAiStatusLabel(status: BudgetBuddyAiStatusValue) {
+  if (status === 'active') return 'AI aktiv · sammanfattad kontext';
+  if (status === 'consent_missing') return 'AI behöver aktiveras';
+  return 'Lokalt läge';
+}
+
+function BudgetBuddyAiStatus({ status }: { status: BudgetBuddyAiStatusValue }) {
+  return <span className={`pill ${status === 'active' ? 'green' : status === 'consent_missing' ? 'warn' : ''}`} aria-live="polite">{budgetBuddyAiStatusLabel(status)}</span>;
+}
+
+function BudgetBuddyAiActivationCard({ status, variant, onActivate, onContinueLocal, onOpenAiInfo, onOpenAiLog, onOpenBuddy, activationPending, successMessage }: { status: BudgetBuddyAiStatusValue; variant: 'compact' | 'full'; onActivate: () => void; onContinueLocal?: () => void; onOpenAiInfo: () => void; onOpenAiLog?: () => void; onOpenBuddy?: () => void; activationPending?: boolean; successMessage?: string }) {
+  const active = status === 'active';
+  return <Card className={`soft budget-buddy-ai-card ${variant}`}>
+    <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}><div><h3>{active ? 'Budget Buddy AI är aktiv' : 'Aktivera Budget Buddy AI ✨'}</h3><BudgetBuddyAiStatus status={status} /></div></div>
+    <p>{active ? 'AI använder sammanfattad Budgetkontext. Råa importerade transaktionsrader skickas inte.' : 'Klirr skickar bara sammanfattad Budgetinformation till AI. Råa importerade transaktionsrader skickas inte.'}</p>
+    {!active && <p className="hint">Budget Buddy fungerar även utan AI, men AI kan ge mer flexibla och personliga svar.</p>}
+    {successMessage && <p role="status" aria-live="polite" className="pill green">{successMessage}</p>}
+    <div className="row">
+      {active ? <><button className="btn primary" onClick={onOpenBuddy}>Öppna Budget Buddy</button>{onOpenAiLog && <button className="btn" onClick={onOpenAiLog}>Se vad AI såg</button>}</> : <><button className="btn primary" disabled={activationPending} onClick={onActivate}>{activationPending ? 'Aktiverar…' : (variant === 'compact' ? 'Aktivera Budget Buddy AI' : 'Aktivera AI')}</button>{onContinueLocal && <button className="btn" onClick={onContinueLocal}>Fortsätt lokalt</button>}<button className="btn ghost" onClick={onOpenAiInfo}>Läs hur AI används</button></>}
+    </div>
+  </Card>;
+}
+
+function DashboardView({ state, setState, summary, budgetHealth, budgetCompletion, detection, visibleReviewCount, loadDemo, setTab, openPrivacyAiInfo, openPrivacyAiLog, hasData, onboarding, dismissFirstRunGuide, onExport, onImproveBudgetHealth }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; budgetHealth: ReturnType<typeof calculateBudgetHealth>; budgetCompletion: ReturnType<typeof calculateBudgetCompletion>; detection: DetectionResult; visibleReviewCount: number; loadDemo: () => void; setTab: (t: TabId) => void; openPrivacyAiInfo: () => void; openPrivacyAiLog: () => void; hasData: boolean; onboarding?: AppState['onboarding']; dismissFirstRunGuide: () => void; onExport: () => void; onImproveBudgetHealth: () => void }) {
   const fixedPct = summary.totalIncome > 0 ? (summary.fixedTotal / summary.totalIncome) * 100 : 0;
   const lifeCost = summary.fixedTotal + summary.variablePlanTotal;
   const activeIncomeCount = summary.incomeItems.length;
@@ -444,12 +481,25 @@ function DashboardView({ summary, budgetHealth, budgetCompletion, detection, vis
   const variableDistribution = groupVariableDistribution(summary.variableItems);
   const marginVisual = marginSafety(summary.remainingAfterPlan, summary.totalIncome);
   const incomeDistribution = incomeSourceDistribution(summary.incomeItems);
+  const [aiActivationPending, setAiActivationPending] = useState(false);
+  const [aiSuccess, setAiSuccess] = useState('');
+  const aiStatus = getBudgetBuddyAiStatus(state);
+  function activateFromHome() {
+    if (aiActivationPending) return;
+    setAiActivationPending(true);
+    const next = activateBudgetBuddyAi(state, 'home');
+    setState(next);
+    setAiSuccess('Budget Buddy AI är aktiverad.');
+    setAiActivationPending(false);
+  }
+  const aiCard = <BudgetBuddyAiActivationCard status={aiStatus} variant="compact" onActivate={activateFromHome} onOpenAiInfo={openPrivacyAiInfo} onOpenAiLog={openPrivacyAiLog} onOpenBuddy={() => setTab('buddy')} activationPending={aiActivationPending} successMessage={aiSuccess} />;
   const row = (id: string, title: string, value: string, subtitle: string, content: ReactNode, important = false, tone?: 'green' | 'warn' | 'danger', visual?: ReactNode) => <ExpandableBudgetItem key={id} id={`home-${id}`} title={title} amount={value} meta={subtitle} status={important ? 'Viktigt' : undefined} tone={tone || (important ? 'warn' : undefined)} warning={important ? 'Behöver uppmärksamhet' : undefined} visual={visual}>{content}</ExpandableBudgetItem>;
 
   if (!hasData || budgetCompletion.percentage < 100) {
     return <><PageTitle title="Din Budget" subtitle="Vad livet kostar varje månad just nu — och hur hållbar Budgeten är." />
       {normalizeOnboardingState(onboarding).status === 'SKIPPED' && <Card className="soft"><p role="status">Inga problem 😊 Du kan alltid starta guiden senare under Inställningar eller fråga Budget Buddy.</p></Card>}
       <Card className="home-hero"><div className="metric-label">Primär överblick</div><div className="metric-value mono">Ditt liv kostar cirka {fmt(lifeCost)} /mån</div><p className="hint">Din Budget behöver lite mer information innan Budgethälsan blir riktigt träffsäker.</p></Card>
+      {aiCard}
       <Card className="budget-list-card"><h3>Bygg klart i lugn takt</h3><div className="budget-list">
         {row('completion', 'Budgetkomplettering', `${budgetCompletion.percentage}%`, completionLabel, <><p>Budgetkomplettering mäter setup-täckning. Budgethälsa mäter hållbarhet.</p><ul>{budgetCompletion.items.map(item => <li key={item.key}>{item.completed ? 'Klart:' : 'Saknas:'} {item.label}</li>)}</ul></>)}
         {row('health', 'Budgethälsa', 'Väntar', 'Mer underlag behövs', <p>Budgethälsa visas tydligare när inkomst, Fasta utgifter och Rörliga utgifter finns på plats. Den mäter Budgetens hållbarhet — inte rikedom eller personligt värde.</p>)}
@@ -460,6 +510,7 @@ function DashboardView({ summary, budgetHealth, budgetCompletion, detection, vis
     <PageTitle title="Din Budget" subtitle="Vad livet kostar varje månad just nu — och hur hållbar Budgeten är." />
     {onboarding?.currentStep === 'finish' && !onboarding.firstRunGuideDismissed && <Card className="soft"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><b>Snabbguide för din första Budget</b><p className="hint">Kolla inkomster, fasta utgifter, Rörliga utgifter och marginal. Budget Buddy kan hjälpa dig justera utan att ändra något förrän du bekräftar.</p></div><button className="btn small ghost" onClick={dismissFirstRunGuide}>Stäng</button></div></Card>}
     <Card className="home-hero"><div className="metric-label">Vad livet kostar varje månad just nu</div><div className="metric-value mono">Ditt liv kostar cirka {fmt(lifeCost)} /mån</div><div className="home-budget-distribution"><SegmentedBudgetBar segments={topDistribution.segments} label={`Nuvarande Budgetfördelning: ${topDistributionText}`} /><p className="hint">{topDistributionText}. {topDistribution.overAllocated ? `Fasta utgifter och Rörliga utgifter överstiger inkomsten med ${fmt(topDistribution.deficit)}; stapeln visar full fördelning av planerade delar.` : 'Visar nuvarande Budgetfördelning, inte historisk konsumtion.'}</p></div><p className="hint">Bygger på bekräftade inkomster, fasta utgifter och Rörliga utgifter — inte historisk transaktionskonsumtion eller kontosaldo.</p></Card>
+    {aiCard}
     {summary.remainingAfterPlan < 0 && <Card className="danger"><b>Budgeten går minus efter plan.</b><p>Det här behöver hanteras innan Budgeten kan kallas hållbar.</p><button className="btn primary" onClick={() => setTab('variablePlan')}>Justera Rörliga utgifter</button></Card>}
     <Card className="budget-list-card"><div className="budget-list">
       {row('budget-health', 'Budgethälsa', `${budgetHealth.score}%`, `${budgetHealth.label}. ${budgetHealthShortStatus(budgetHealth)}`, <div className="stack"><p><b>Vad betyder scoret?</b> Budgethälsa mäter hur hållbar och stabil din Budget är. Den mäter inte hur rik du är eller hur ”duktig” du är med pengar.</p><div className="grid grid-2 compact-grid"><div><h4>Stärker Budgethälsan</h4>{healthReasons.positive.map(r => <div className="list-line" key={r.id}><span>{r.label}</span><b className="mono">+{r.impact}</b></div>)}</div><div><h4>Drar ner Budgethälsan</h4>{healthReasons.negative.map(r => <div className="list-line" key={r.id}><span>{r.label}</span><b className="mono">{r.impact}</b></div>)}</div></div><p className="hint">Beräkningen är deterministisk och baseras på nuvarande Budgetläge: inkomst, marginal, Fasta utgifter, Rörliga utgifter, buffert, granskningsläge och hushållsprofil.</p><h4>Nästa steg</h4><ul>{nextSteps.map(step => <li key={step}>{step}</li>)}</ul><div className="row"><button className="btn primary" onClick={onImproveBudgetHealth}>Hjälp mig förbättra Budgethälsan ✨</button><button className="btn" onClick={() => setTab('variablePlan')}>Visa Rörliga utgifter</button></div></div>, budgetHealth.score < 60, budgetHealth.score < 60 ? 'danger' : budgetHealth.score < 75 ? 'warn' : 'green', <BudgetHealthRing score={budgetHealth.score} label={budgetHealth.label} />)}
@@ -503,25 +554,29 @@ function ImportReviewView({ active, setActive, detection, state, setPartial, loa
 }
 
 
-function MoreView({ active, setActive, state, setState, onReset, loadDemo, openOnboarding }: { active: MoreSection; setActive: (s: MoreSection) => void; state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; openOnboarding: () => void }) {
+function MoreView({ active, setActive, privacyFocus, onPrivacyFocusHandled, state, setState, onReset, loadDemo, openOnboarding }: { active: MoreSection; setActive: (s: MoreSection) => void; privacyFocus?: PrivacyFocus; onPrivacyFocusHandled: () => void; state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; openOnboarding: () => void }) {
   return <><PageTitle title="Mer / Inställningar" subtitle="Regler, export, sync, demo-data och inställningar." />
     <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }, { id: 'privacy', label: 'Sekretess & data' }]} />
     {active === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setState({ ...state, rules })} />}
     {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} openOnboarding={openOnboarding} restartOnboarding={() => { setState({ ...state, onboardingCompleted: false, onboarding: { ...normalizeOnboardingState(state.onboarding), status: 'MANUAL_PATH', path: 'manual', started: true, currentStep: 'household' } }); openOnboarding(); }} />}
-    {active === 'privacy' && <PrivacyCenterView state={state} setState={setState} onReset={onReset} />}
+    {active === 'privacy' && <PrivacyCenterView state={state} setState={setState} onReset={onReset} privacyFocus={privacyFocus} onPrivacyFocusHandled={onPrivacyFocusHandled} />}
   </>;
 }
 
-function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, setScenarioOff, autoMessage, onAutoMessageHandled }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; setScenarioOff: (ids: string[]) => void; autoMessage?: string; onAutoMessageHandled?: () => void }) {
+function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCount, handledReviewCount, possibleIncomeDuplicates, setTab, openPrivacyAiInfo, openPrivacyAiLog, setScenarioOff, autoMessage, onAutoMessageHandled }: { state: AppState; setState: (s: AppState) => void; summary: ReturnType<typeof calculateBudget>; detection: DetectionResult; visibleReviewCount: number; handledReviewCount: number; possibleIncomeDuplicates: ReturnType<typeof detectPossibleIncomeDuplicates>; setTab: (t: TabId) => void; openPrivacyAiInfo: () => void; openPrivacyAiLog: () => void; setScenarioOff: (ids: string[]) => void; autoMessage?: string; onAutoMessageHandled?: () => void }) {
   const [draft, setDraft] = useState('');
   const [buddyBusy, setBuddyBusy] = useState(false);
   const [composerComposing, setComposerComposing] = useState(false);
   const [quickChoicesOpen, setQuickChoicesOpen] = useState(false);
+  const [pendingAiQuestion, setPendingAiQuestion] = useState<string | null>(null);
+  const [aiActivationPending, setAiActivationPending] = useState(false);
+  const [localAiCardDismissed, setLocalAiCardDismissed] = useState(false);
   const quickChoicesId = useId();
   const quickChoicesRef = useRef<HTMLDivElement | null>(null);
   const quickChoicesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const userMessageCount = state.chatMessages.filter(m => m.role === 'user').length;
+  const aiStatus = getBudgetBuddyAiStatus(state);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [state.chatMessages]);
   useEffect(() => {
     const ob = normalizeOnboardingState(state.onboarding, state.onboardingCompleted);
@@ -575,13 +630,15 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
     const msg: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `${result.message}${healthText}`.trim() };
     setState({ ...finalState, chatMessages: [...finalState.chatMessages, msg] });
   }
-  async function send(text: string) {
+  async function send(text: string, options: { appendUserMessage?: boolean; baseState?: AppState; resumedFromActivation?: boolean } = {}) {
     const trimmed = text.trim();
     if (!trimmed || buddyBusy) return;
-    const pending = findPendingBuddyAction(state);
+    const base = options.baseState || state;
+    const appendUserMessage = options.appendUserMessage !== false;
+    const pending = findPendingBuddyAction(base);
     const intent = pending ? detectBuddyActionIntent(trimmed) : null;
     const userMsg: ChatMessage = { id: uid('msg'), role: 'user', content: trimmed, createdAt: todayIso() };
-    const afterUserState = { ...state, chatMessages: [...state.chatMessages, userMsg] };
+    const afterUserState = appendUserMessage ? { ...base, chatMessages: [...base.chatMessages, userMsg] } : base;
     setDraft('');
     setQuickChoicesOpen(false);
     if (pending && intent) {
@@ -589,34 +646,37 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       return;
     }
     const isPlanningBuddyRequest = /förbättringsplan|alternativa planer|viktigaste mål|Budgetutveckling|hålla koll/i.test(trimmed);
-    const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: isPlanningBuddyRequest ? 'budget_buddy_planning' : 'budget_buddy_chat', purpose: isPlanningBuddyRequest ? 'Budget Buddy planering' : 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount, workspaceId: state.activeWorkspaceId });
+    const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: isPlanningBuddyRequest ? 'budget_buddy_planning' : 'budget_buddy_chat', purpose: isPlanningBuddyRequest ? 'Budget Buddy planering' : 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount, workspaceId: base.activeWorkspaceId });
     if (!safeAi.allowed) {
       const blockedState = appendAiLog(afterUserState, safeAi.logEntry);
-      setState({ ...blockedState, chatMessages: [...blockedState.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `Aktivera Budget Buddy AI ✨\n\n${safeAi.reason}\n\nBudget Buddy kan skicka en sammanfattad Budgetkontext om du aktiverar AI. Råa importerade transaktionsrader skickas inte. Du kan granska “Vad AI såg”, stänga av AI igen och fortsätta använda lokalt Budget Buddy utan AI.`, actions: [{ label: 'Aktivera Budget Buddy', tab: 'more' }, { label: 'Fortsätt utan AI', message: trimmed }, { label: 'Läs hur AI används', tab: 'more' }] }] });
+      setPendingAiQuestion(trimmed);
+      setLocalAiCardDismissed(false);
+      setState({ ...blockedState, chatMessages: [...blockedState.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `${safeAi.reason} Jag sparade frågan här så du kan aktivera AI och fortsätta utan att skriva om den.` }] });
       return;
     }
+
     setState(afterUserState);
     setBuddyBusy(true);
     try {
       const currentDate = new Date().toISOString();
-      const budgetSuggestion = suggestVariableBudget({ available: summary.remainingAfterFixed, mode: trimmed.toLowerCase().includes('kris') ? 'crisis' : 'safe', householdProfile: state.householdProfile, currentVariablePlan: state.variablePlan });
       const actionableCandidates = getActionableRecurringCandidates(detection.recurring);
-      const completion = calculateBudgetCompletion({ state, summary, detection, visibleReviewCount, handledReviewCount });
-      const ob = normalizeOnboardingState(state.onboarding, state.onboardingCompleted);
+      const completion = calculateBudgetCompletion({ state: base, summary, detection, visibleReviewCount, handledReviewCount });
+      const ob = normalizeOnboardingState(base.onboarding, base.onboardingCompleted);
       const context = safeAi.context;
-      const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
-      const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+      const localPlan = planBuddyAction({ message: trimmed, context, incomes: base.incomes, variablePlan: base.variablePlan, householdProfile: base.householdProfile, pendingAction: pending });
+      const recentMessages = base.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
       const data = await response.json();
       const proposedAction = data.proposedAction || localPlan.proposedAction;
       const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || 'Jag kunde inte svara just nu. Inga ändringar gjordes.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
-      let nextState: AppState = appendAiLog({ ...state, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(state.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : state.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : state.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || state.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : state.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: 'sent' });
+      let nextState: AppState = appendAiLog({ ...base, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(base.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : base.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : base.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || base.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : base.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: 'sent' });
       if (proposedAction) {
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: proposedAction.type === 'choose_income_to_update' ? 'needs_user_choice' : 'proposed', message: trimmed, reason: localPlan.explanationHints?.join(' ') });
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: 'rendered', message: proposedAction.title });
       } else if (localPlan.intent !== 'none') {
         nextState = appendBuddyActionHistory(nextState, { type: localPlan.missingInfo?.length ? 'missing_info' : 'no_action_planned', message: trimmed, reason: localPlan.clarificationQuestion || localPlan.explanationHints?.join(' ') });
       }
+      setPendingAiQuestion(null);
       setState(nextState);
     } catch {
       const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
@@ -649,6 +709,20 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     if (action.scenarioOffIds) setScenarioOff(action.scenarioOffIds);
     if (action.message) send(action.message);
   }
+  function activateFromBuddy() {
+    if (aiActivationPending) return;
+    setAiActivationPending(true);
+    const next = activateBudgetBuddyAi(state, 'buddy');
+    setState(next);
+    setLocalAiCardDismissed(false);
+    setAiActivationPending(false);
+    if (pendingAiQuestion) void send(pendingAiQuestion, { appendUserMessage: false, baseState: next, resumedFromActivation: true });
+  }
+  function continueLocalBuddy() {
+    setLocalAiCardDismissed(true);
+    setPendingAiQuestion(null);
+  }
+
   function actionSummary(action: BuddyProposedAction) {
     const riskText = action.riskLevel === 'high' ? 'Hög risk — dubbelkolla extra' : action.riskLevel === 'medium' ? 'Medelrisk — kräver tydligt ja' : action.riskLevel === 'low' ? 'Låg risk' : null;
     const preview = action.preview && <div className="stack">{action.preview.before?.length ? <><b>Före</b>{action.preview.before.map((item, i) => <div className="list-line" key={`b-${i}`}><span>{item.label}</span><b className="mono">{typeof item.amount === 'number' ? fmt(item.amount) : item.note}</b></div>)}</> : null}{action.preview.after?.length ? <><b>Efter</b>{action.preview.after.map((item, i) => <div className="list-line" key={`a-${i}`}><span>{item.label}</span><b className="mono">{typeof item.amount === 'number' ? fmt(item.amount) : item.note}</b></div>)}</> : null}{action.preview.impact?.map((item, i) => <div className="list-line" key={`i-${i}`}><span>{item.label}</span><b className="mono">{item.value}</b></div>)}</div>;
@@ -667,8 +741,9 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     return <div className="stack">{preview}<p className="hint">Ingen direkt ändring görs utan bekräftelse.</p></div>;
   }
   return <Card className="chat-shell">
-    <div className="chat-header"><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div>
+    <div className="chat-header"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div><div className="row"><BudgetBuddyAiStatus status={aiStatus} />{aiStatus === 'active' && <button className="btn small ghost" onClick={openPrivacyAiLog}>Se vad AI såg</button>}</div></div></div>
     <div className="chat-messages" ref={scrollRef}>
+      {aiStatus !== 'active' && (!localAiCardDismissed || pendingAiQuestion) && <BudgetBuddyAiActivationCard status={aiStatus} variant="full" onActivate={activateFromBuddy} onContinueLocal={continueLocalBuddy} onOpenAiInfo={openPrivacyAiInfo} activationPending={aiActivationPending} successMessage={pendingAiQuestion ? 'Aktivera för att fortsätta med din senaste fråga.' : undefined} />}
       {state.chatMessages.map((m, index) => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box action-card"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row action-card-controls"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className={`pill ${m.proposedAction.status === 'applied' ? 'green' : m.proposedAction.status === 'cancelled' ? 'danger' : 'warn'}`} aria-live="polite">{m.proposedAction.status === 'pending' ? 'Föreslagen · inte ändrad än' : m.proposedAction.status === 'applied' ? 'Applicerad · Budgeten ändrad' : m.proposedAction.status === 'cancelled' ? 'Avbruten · inget ändrat' : m.proposedAction.status}</span></div></div>}{m.content.toLowerCase().includes('ångra') && <div className="message-actions"><button className="btn small" onClick={undoLast}>Ångra senaste</button></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div className="chat-footer">
@@ -1055,17 +1130,28 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
 }
 
 
-function PrivacyCenterView({ state, setState, onReset }: { state: AppState; setState: (s: AppState) => void; onReset: () => void }) {
+function PrivacyCenterView({ state, setState, onReset, privacyFocus, onPrivacyFocusHandled }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; privacyFocus?: PrivacyFocus; onPrivacyFocusHandled?: () => void }) {
   const normalized = normalizePrivacyState(state);
   const prefs = normalized.privacyPreferences!;
   const latestAi = normalized.aiContextLog && normalized.aiContextLog.length ? normalized.aiContextLog[normalized.aiContextLog.length - 1] : undefined;
   const aiConsentOk = hasAcceptedConsent(normalized, 'ai_features', legalDocumentConfig.aiInfoVersion);
+  const aiStatus = getBudgetBuddyAiStatus(normalized);
+  const aiInfoRef = useRef<HTMLDetailsElement | null>(null);
+  const aiLogRef = useRef<HTMLDivElement | null>(null);
+  const aiControlsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const target = privacyFocus === 'ai_log' ? aiLogRef.current : privacyFocus === 'ai_controls' ? aiControlsRef.current : privacyFocus === 'ai_information' ? aiInfoRef.current : null;
+    if (!target) return;
+    aiInfoRef.current?.setAttribute('open', 'true');
+    window.setTimeout(() => { target.scrollIntoView({ block: 'start' }); target.querySelector<HTMLElement>('button, [tabindex], summary')?.focus(); onPrivacyFocusHandled?.(); }, 0);
+  }, [privacyFocus]);
   const exportData = buildDataExport(normalized);
   const [deleteKind, setDeleteKind] = useState<'budget' | 'local' | 'cloud' | 'user'>('budget');
   const [confirmText, setConfirmText] = useState('');
   const [result, setResult] = useState('');
-  function enableAi() { setState(addConsentRecord({ ...normalized, privacyPreferences: { ...prefs, aiEnabled: true } }, { type: 'ai_features', documentVersion: legalDocumentConfig.aiInfoVersion, status: 'accepted', source: 'settings', locale: 'sv-SE' })); }
-  function disableAi() { setState(withdrawAiConsent(normalized)); }
+  function enableAi() { setState(activateBudgetBuddyAi(normalized, 'privacy_settings')); setResult('Budget Buddy AI är aktiverad.'); }
+  function disableAi() { setState(disableBudgetBuddyAi(normalized, 'privacy_settings')); setResult('AI är avstängt. Samtyckeshistoriken finns kvar tills du återkallar den explicit.'); }
+  function withdrawAi() { setState(withdrawAiConsent(normalized)); setResult('AI-samtycket är återkallat.'); }
   function exportAll() {
     const next = normalizePrivacyState({ ...normalized, privacyPreferences: { ...prefs, lastExportAt: new Date().toISOString() } });
     setState(next);
@@ -1089,9 +1175,9 @@ function PrivacyCenterView({ state, setState, onReset }: { state: AppState; setS
     ['Cookie- och spårningsinformation', 'utkast-0.1', 'Ej fastställd'],
   ];
   return <><PageTitle title="Sekretess & data" subtitle="Förstå, exportera och radera din data. Juridiska texter är utkast och kräver slutlig granskning före produktion." />
-    <Card className="soft"><h3>Översikt</h3><div className="grid grid-3 compact-grid"><MetricCard label="Lagring" value={normalized.accounts.length || normalized.transactions.length || normalized.incomes.length ? 'Lokal data finns' : 'Ingen lokal Budgetdata'} /><MetricCard label="Molnsynk" value="Kan inte verifieras i demon" /><MetricCard label="AI" value={prefs.aiEnabled && aiConsentOk ? 'Aktiverad' : 'Avstängd'} /><MetricCard label="Senaste AI-kontext" value={latestAi ? new Date(latestAi.createdAt).toLocaleString('sv-SE') : 'Ingen skickad'} /><MetricCard label="Export" value="Tillgänglig lokalt" /><MetricCard label="Radering" value="Lokal radering finns" /></div></Card>
+    <Card className="soft"><h3>Översikt</h3><div className="grid grid-3 compact-grid"><MetricCard label="Lagring" value={normalized.accounts.length || normalized.transactions.length || normalized.incomes.length ? 'Lokal data finns' : 'Ingen lokal Budgetdata'} /><MetricCard label="Molnsynk" value="Kan inte verifieras i demon" /><MetricCard label="AI" value={budgetBuddyAiStatusLabel(aiStatus)} /><MetricCard label="Senaste AI-kontext" value={latestAi ? new Date(latestAi.createdAt).toLocaleString('sv-SE') : 'Ingen skickad'} /><MetricCard label="Export" value="Tillgänglig lokalt" /><MetricCard label="Radering" value="Lokal radering finns" /></div></Card>
     <details open><summary><b>Din datalagring</b></summary><Card><h3>Data- och säkerhetsstatus</h3><div className="stack"><div className="list-line"><span>Local storage</span><span className="pill">configured</span></div><div className="list-line"><span>Authentication</span><span className="pill">signed out/kan inte verifieras här</span></div><div className="list-line"><span>Cloud sync</span><span className="pill">unknown</span></div><div className="list-line"><span>AI raw-transaction protection</span><span className="pill green">verified by code path</span></div><div className="list-line"><span>Legal identity</span><span className="pill">missing</span></div></div><p className="hint">Klirr visar inte påståenden om kryptering, region, full säkerhet eller regelefterlevnad när detta inte kan verifieras i demon.</p></Card></details>
-    <details><summary><b>AI & Budget Buddy</b></summary><Card><h3>Använd AI-funktioner</h3><p>Budgeten fungerar även utan AI. När AI är avstängt kan du fortfarande importera, granska och ändra Budgeten manuellt.</p><div className="row"><button className="btn primary" disabled={prefs.aiEnabled && aiConsentOk} onClick={enableAi}>Aktivera AI och godkänn AI-information</button><button className="btn" disabled={!prefs.aiEnabled && !aiConsentOk} onClick={disableAi}>Stäng av / återkalla AI-samtycke</button></div><p className="hint">Nuvarande AI-samtycke: {aiConsentOk ? 'Godkänt' : 'Saknas eller återkallat'} · version {legalDocumentConfig.aiInfoVersion}</p></Card><Card><h3>Vad AI såg</h3>{normalized.aiContextLog?.length ? <div className="stack">{[...(normalized.aiContextLog || [])].reverse().map(entry => <details key={entry.id}><summary aria-controls={entry.id} aria-expanded="false">{new Date(entry.createdAt).toLocaleString('sv-SE')} · {entry.purpose} · {entry.destinationLabel} · {entry.outcome}</summary><div id={entry.id} className="stack"><p>Kategorier: {entry.dataCategories.join(', ')}</p><pre className="copy-box">{JSON.stringify(entry.summaryFields, null, 2)}</pre><p>Varningar/counts: {entry.warningsIncluded.join(', ') || 'Inga'}</p><p>Råa importerade transaktionsrader ingick inte.</p>{entry.failureReason && <p>Orsak: {entry.failureReason}</p>}</div></details>)}</div> : <p>Ingen AI-förfrågan har skickats ännu.</p>}<button className="btn danger" disabled={!normalized.aiContextLog?.length} onClick={() => window.confirm('Rensa AI-transparenshistorik? Budgetdata påverkas inte.') && setState({ ...normalized, aiContextLog: [] })}>Rensa AI-transparenshistorik</button></Card></details>
+    <details ref={aiInfoRef} open><summary><b>AI & Budget Buddy</b></summary><Card><div ref={aiControlsRef} tabIndex={-1}><h3>Använd AI-funktioner</h3><BudgetBuddyAiStatus status={aiStatus} /><p>Budgeten fungerar även utan AI. Stäng av AI är en preferens; Återkalla AI-samtycke är ett separat juridiskt val.</p><div className="row"><button className="btn primary" disabled={aiStatus === 'active'} onClick={enableAi}>Aktivera AI och godkänn AI-information</button><button className="btn" disabled={aiStatus === 'disabled'} onClick={disableAi}>Stäng av AI</button><button className="btn danger" disabled={!aiConsentOk} onClick={withdrawAi}>Återkalla AI-samtycke</button></div><p className="hint">Nuvarande AI-samtycke: {aiConsentOk ? 'Godkänt' : 'Saknas eller återkallat'} · version {legalDocumentConfig.aiInfoVersion}</p></div></Card><Card><div ref={aiLogRef} tabIndex={-1}><h3>Vad AI såg</h3>{normalized.aiContextLog?.length ? <div className="stack">{[...(normalized.aiContextLog || [])].reverse().map(entry => <details key={entry.id}><summary aria-controls={entry.id} aria-expanded="false">{new Date(entry.createdAt).toLocaleString('sv-SE')} · {entry.purpose} · {entry.destinationLabel} · {entry.outcome}</summary><div id={entry.id} className="stack"><p>Kategorier: {entry.dataCategories.join(', ')}</p><pre className="copy-box">{JSON.stringify(entry.summaryFields, null, 2)}</pre><p>Varningar/counts: {entry.warningsIncluded.join(', ') || 'Inga'}</p><p>Råa importerade transaktionsrader ingick inte.</p>{entry.failureReason && <p>Orsak: {entry.failureReason}</p>}</div></details>)}</div> : <p>Ingen AI-förfrågan har skickats ännu.</p>}<button className="btn danger" disabled={!normalized.aiContextLog?.length} onClick={() => window.confirm('Rensa AI-transparenshistorik? Budgetdata påverkas inte.') && setState({ ...normalized, aiContextLog: [] })}>Rensa AI-transparenshistorik</button></div></Card></details>
     <details><summary><b>Samtycken</b></summary><Card><h3>Samtycken</h3><p>Villkor och integritetspolicy kan visas och versionsspåras utan att skapa en blockerande demo-vägg. Optional analytics/marketing används inte.</p><div className="list-line"><span>AI-funktioner</span><b>{aiConsentOk ? 'Godkänt' : 'Inte godkänt'}</b></div><div className="list-line"><span>Analys</span><b>Används inte</b></div><div className="list-line"><span>Marknadsföring</span><b>Används inte</b></div><pre className="copy-box">{JSON.stringify(normalized.consentRecords || [], null, 2)}</pre></Card></details>
     <details><summary><b>Exportera data</b></summary><Card><h3>Exportera alla mina data</h3><p className="hint">JSON-exporten skapas lokalt och innehåller lokalt tillgänglig Budgetdata, importerade transaktioner, Budget Buddy-historik, samtycken och AI-transparenslogg. Den hämtar inte cloud-only-data från tredje part.</p><div className="grid grid-3 compact-grid"><MetricCard label="Workspaces" value={String(exportData.manifest.workspaceCount)} /><MetricCard label="Transaktioner" value={String(exportData.manifest.transactionCount)} /><MetricCard label="AI-loggar" value={String(exportData.manifest.aiLogCount)} /></div><button className="btn primary" onClick={exportAll}>Exportera alla mina data</button></Card></details>
     <details><summary><b>Radera data och konto</b></summary><Card><h3>Vad vill du radera?</h3><select className="select" value={deleteKind} onChange={e => setDeleteKind(e.target.value as any)}><option value="budget">Rensa aktiv Budget</option><option value="local">Radera all lokal data</option><option value="cloud">Radera molndata</option><option value="user">Radera användarkonto</option></select><p className="hint">Förhandsgranskning: {deleteKind === 'budget' ? 'Rensar lokal Budget i aktiv demo-workspace. Samtycken bevaras.' : deleteKind === 'local' ? 'Rensar localStorage för Klirr i denna webbläsare. Molndata påverkas inte.' : 'Inte tillgängligt i denna demo; ingen simulerad framgång visas.'}</p><button className="btn" onClick={exportAll}>Exportera mina data först</button><label>Skriv RADERA för lokal Budget-rensning<input className="input" value={confirmText} onChange={e => setConfirmText(e.target.value)} /></label><button className="btn danger" onClick={runDeletion}>Kör vald radering</button>{result && <p role="status">{result}</p>}</Card></details>
@@ -1104,6 +1190,7 @@ function PrivacyCenterView({ state, setState, onReset }: { state: AppState; setS
 function SettingsView({ state, setState, onReset, loadDemo, restartOnboarding, openOnboarding }: { state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; restartOnboarding: () => void; openOnboarding: () => void }) {
   const [importText, setImportText] = useState('');
   const exportText = JSON.stringify({ exportedAt: new Date().toISOString(), version: '1.0', state }, null, 2);
+  const aiStatus = getBudgetBuddyAiStatus(state);
   function copyExport() { navigator.clipboard?.writeText(exportText).catch(() => undefined); }
   function importState() {
     try {
@@ -1124,6 +1211,7 @@ function SettingsView({ state, setState, onReset, loadDemo, restartOnboarding, o
     </div>
     <Card><h3>Exportera hela lokala Klirr-datan</h3><p className="hint">Använd detta vid tester: kopiera JSON och skicka till utvecklare om något ser fel ut. Undvik riktig privatdata i delade buggrapporter.</p><textarea className="textarea copy-box" readOnly value={exportText} /><div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={copyExport}>Kopiera JSON</button></div></Card>
     <Card><h3>Importera Klirr-export</h3><p className="hint">Klistra in en tidigare export för att återskapa ett testläge.</p><textarea className="textarea" rows={7} value={importText} onChange={e => setImportText(e.target.value)} placeholder="Klistra in JSON-export här…" /><div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={importState}>Importera JSON</button></div></Card>
+    <Card><h3>Budget Buddy AI</h3><BudgetBuddyAiStatus status={aiStatus} /><p className="hint">Samma aktivering används här som på Hem och i Buddy.</p><div className="row"><button className="btn primary" disabled={aiStatus === 'active'} onClick={() => setState(activateBudgetBuddyAi(state, 'privacy_settings'))}>Aktivera AI</button><button className="btn" disabled={aiStatus === 'disabled'} onClick={() => setState(disableBudgetBuddyAi(state, 'privacy_settings'))}>Stäng av AI</button></div></Card>
     <Card><h3>Integritet</h3><p>Klirr v1.0 är förberedd för inloggning, molnsparning och riktig AI, men fungerar fortfarande lokalt utan nycklar. När Supabase/OpenAI är aktiverat ska användaren tydligt informeras om vad som sparas och vad som skickas till AI. Radera/exportera data finns här under Inställningar.</p></Card>
   </>;
 }

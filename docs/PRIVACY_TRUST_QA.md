@@ -16,3 +16,12 @@ Kör på desktop och 320/360/375/390/414/430 px.
 
 
 > Current product note: Klirr has no active paid tier. Legacy experiment data may remain in storage/export as archived or future-feature data, and all Budget Buddy AI uses the same summarized Privacy boundary.
+
+## Issue #66 QA: Budget Buddy AI-aktivering
+
+- Kontrollera att Hem visar Budget Buddy AI-kortet och att aktivering stannar på Hem utan `/api/budget-buddy`-anrop.
+- Kontrollera att Buddy alltid visar `Lokalt läge`, `AI behöver aktiveras` eller `AI aktiv · sammanfattad kontext`.
+- Skicka en Buddy-fråga i lokalt läge, aktivera i Buddy och verifiera en användarbubbla och ett fjärranrop.
+- Stäng av AI i Sekretess och verifiera att Hem och Buddy direkt visar lokalt läge.
+- Återkalla AI-samtycke och verifiera att tidigare accepterat record inte räcker om senaste matchande record är withdrawn.
+- Ladda demo-data och verifiera att privacy preferences, samtycken och “Vad AI såg” finns kvar.

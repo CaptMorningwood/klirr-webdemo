@@ -32,7 +32,8 @@ export function normalizePrivacyState(state: AppState): AppState {
 }
 
 export function hasAcceptedConsent(state: AppState, type: string, version: string) {
-  return [...(state.consentRecords || [])].reverse().some(r => r.type === type && r.documentVersion === version && r.status === 'accepted');
+  const latest = [...(state.consentRecords || [])].reverse().find(r => r.type === type && r.documentVersion === version);
+  return latest?.status === 'accepted';
 }
 
 export function addConsentRecord(state: AppState, record: Omit<NonNullable<AppState['consentRecords']>[number], 'id' | 'decidedAt'>): AppState {
