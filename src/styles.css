@@ -314,3 +314,38 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
 }
 @media (prefers-reduced-motion: reduce) { .budget-row-chevron { transition:none; } }
 
+
+/* Issue #51: compact explanatory Budget visuals */
+.home-budget-distribution { margin-top: 12px; display:flex; flex-direction:column; gap: 7px; max-width: 720px; }
+.mini-progress, .segmented-bar { display:flex; width: min(260px, 100%); height: 10px; border-radius: 999px; overflow:hidden; background: var(--neutral); border: 1px solid rgba(234,223,255,.95); flex-shrink: 0; }
+.mini-progress > span { display:block; height:100%; min-width: 0; background: linear-gradient(90deg, rgba(124,60,255,.82), rgba(255,79,184,.76)); border-radius: inherit; }
+.mini-progress.green > span { background: linear-gradient(90deg, rgba(124,60,255,.72), rgba(46,211,255,.7)); }
+.mini-progress.warn > span { background: linear-gradient(90deg, rgba(124,60,255,.72), rgba(245,158,11,.78)); }
+.mini-progress.danger { background: linear-gradient(90deg, rgba(239,71,111,.18), rgba(239,71,111,.08)); }
+.mini-progress.danger > span { background: linear-gradient(90deg, var(--danger), var(--accent-2)); }
+.segmented-bar > span { display:block; height:100%; min-width: 0; }
+.seg-fixed { background: var(--accent); }
+.seg-variable { background: var(--accent-2); }
+.seg-margin { background: var(--accent-3); }
+.seg-food { background: var(--accent); }
+.seg-transport { background: #9d6cff; }
+.seg-fun { background: var(--accent-2); }
+.seg-other { background: #c6b5ef; }
+.seg-buffer { background: var(--accent-3); }
+.visual-summary { color: var(--muted); font-size: 12px; line-height: 1.25; }
+.health-ring { width: 50px; height: 50px; position: relative; display:inline-flex; align-items:center; justify-content:center; flex: 0 0 auto; }
+.health-ring svg { position:absolute; inset:0; transform: rotate(-90deg); }
+.health-ring circle { fill:none; stroke-width: 5; }
+.health-ring-track { stroke: var(--neutral); }
+.health-ring-value { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .18s ease; }
+.health-ring b { position:relative; font-size: 13px; color: var(--accent-text); }
+@media (max-width: 860px) {
+  .mini-progress, .segmented-bar { width: 100%; max-width: 210px; }
+  .health-ring { width: 44px; height: 44px; }
+  .budget-row-button { gap: 8px; }
+}
+@media (max-width: 380px) {
+  .budget-row-side { flex-direction: column; align-items: flex-end; gap: 2px; }
+  .mini-progress, .segmented-bar { max-width: 170px; }
+}
+@media (prefers-reduced-motion: reduce) { .health-ring-value { transition:none; } }
