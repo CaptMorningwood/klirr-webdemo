@@ -36,3 +36,7 @@ Använd språk som:
 - Budgethälsa
 
 Undvik att göra Budget Buddy till en allmän assistent eller en historisk månadsanalys.
+
+## Conversation 2.0 på mobil
+
+Visa kort att AI är aktiv och bara hämtar relevant Budgetinformation. “Ny konversation” rensar chatt och samtalssammanfattning, inte Budget eller actionhistorik. Verktygsarbete får beskrivas mänskligt, till exempel att Budget Buddy räknar på Budgeten, utan interna verktygsnamn.

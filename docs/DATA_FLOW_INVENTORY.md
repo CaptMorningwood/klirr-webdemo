@@ -27,3 +27,7 @@ Tidigare Budget Buddy-kontext byggdes nära anropet och innehöll `summary`, `re
 
 
 > Current product note: Klirr has no active paid tier. Legacy experiment data may remain in storage/export as archived or future-feature data, and all Budget Buddy AI uses the same summarized Privacy boundary.
+
+## Budget Buddy Conversation 2.0 dataflöde
+
+AI request payload består av naturligt meddelande, recent messages, eventuell `BuddyConversationSummary`, requestMetadata och safeContext. SafeContext hålls för verktygskörning; modellen ser bara verktygsoutput för valda verktyg. Tool usage-loggen sparar verktygsnamn och datakategorier per fråga.

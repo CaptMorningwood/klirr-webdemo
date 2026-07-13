@@ -25,3 +25,10 @@ Kör på desktop och 320/360/375/390/414/430 px.
 - Stäng av AI i Sekretess och verifiera att Hem och Buddy direkt visar lokalt läge.
 - Återkalla AI-samtycke och verifiera att tidigare accepterat record inte räcker om senaste matchande record är withdrawn.
 - Ladda demo-data och verifiera att privacy preferences, samtycken och “Vad AI såg” finns kvar.
+
+## Conversation 2.0 QA
+
+- Fråga “Vad är du?” och verifiera att “Vad AI såg” visar inga Budgetdatakategorier.
+- Fråga “Hur ser min Budget ut?” och verifiera att relevanta Budgetverktyg och datakategorier loggas.
+- Verifiera texten att Budget Buddy bara hämtar relevanta Budgetdelar.
+- Starta “Ny konversation” och kontrollera att Budget och actionhistorik finns kvar.

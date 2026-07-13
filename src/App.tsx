@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import type { Account, AppState, BudgetGoal, BuddyAction, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, Reminder, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
+import type { Account, AppState, BudgetGoal, BuddyAction, BuddyConversationSummary, BuddyProposedAction, ChatMessage, CostType, DetectionResult, FoodAmbition, Frequency, HouseholdProfile, Income, ManualExpense, Reminder, RecurringDecision, ReviewDecision, Rule, TabId, Transaction, TransferDecision, TransportNeed, VariablePlanItem } from './types';
 import { buildDemoData } from './data/demoData';
 import { calculateBudget } from './lib/budgetCalculator';
 import { defaultHouseholdProfile, householdUnits, normalizeHouseholdProfile, suggestVariableBudget, type BudgetSuggestionMode } from './lib/budgetSuggestionEngine';
@@ -80,6 +80,23 @@ subscriptionStatus: 'inactive',
   consentRecords: [],
   aiContextLog: [],
 };
+
+
+function updateBuddyConversationSummary(previous: BuddyConversationSummary | undefined, userMessage: string, assistantMessage: string, proposedAction?: BuddyProposedAction) {
+  const text = `${userMessage} ${assistantMessage}`.toLowerCase();
+  const topic = /marginal/.test(text) ? 'Marginal' : /buffert|spar/.test(text) ? 'Buffert och sparande' : /mat|rörlig|rorlig/.test(text) ? 'Rörliga utgifter' : /inkomst|lön|lon/.test(text) ? 'Inkomster' : previous?.topic;
+  const decisions = [...(previous?.decisions || [])].slice(-4);
+  if (proposedAction) decisions.push(`Förberedde ${proposedAction.type}; inväntar bekräftelse.`);
+  return {
+    updatedAt: todayIso(),
+    topic,
+    activeGoal: proposedAction?.type || previous?.activeGoal,
+    userPreferences: [...(previous?.userPreferences || []), /ändra inget|bara resonera/i.test(userMessage) ? 'Vill resonera utan ändring' : ''].filter(Boolean).slice(-5),
+    establishedFacts: [...(previous?.establishedFacts || [])].slice(-6),
+    decisions,
+    unresolvedQuestion: /[?？]$/.test(assistantMessage.trim()) ? assistantMessage.trim().slice(0, 180) : undefined,
+  };
+}
 
 const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
   { id: 'dashboard', label: 'Översikt', shortLabel: 'Hem', icon: '⌁' },
@@ -442,7 +459,7 @@ function OnboardingView({ initialState, state, setState, loadDemo, setTab, onExi
 
 
 function budgetBuddyAiStatusLabel(status: BudgetBuddyAiStatusValue) {
-  if (status === 'active') return 'AI aktiv · sammanfattad kontext';
+  if (status === 'active') return 'AI aktiv · hämtar bara relevant Budgetinformation';
   if (status === 'consent_missing') return 'AI behöver aktiveras';
   return 'Lokalt läge';
 }
@@ -648,6 +665,14 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
     const isPlanningBuddyRequest = /förbättringsplan|alternativa planer|viktigaste mål|Budgetutveckling|hålla koll/i.test(trimmed);
     const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: isPlanningBuddyRequest ? 'budget_buddy_planning' : 'budget_buddy_chat', purpose: isPlanningBuddyRequest ? 'Budget Buddy planering' : 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount, workspaceId: base.activeWorkspaceId });
     if (!safeAi.allowed) {
+      if (safeAi.logEntry.failureReason === 'ai_disabled') {
+        const local = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
+        const localMsg: ChatMessage = { ...local, content: `Lokalt läge: ${local.content}
+
+För friare samtal kan du aktivera AI.` };
+        setState({ ...afterUserState, chatMessages: [...afterUserState.chatMessages, localMsg] });
+        return;
+      }
       const blockedState = appendAiLog(afterUserState, safeAi.logEntry);
       setPendingAiQuestion(trimmed);
       setLocalAiCardDismissed(false);
@@ -664,12 +689,15 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       const ob = normalizeOnboardingState(base.onboarding, base.onboardingCompleted);
       const context = safeAi.context;
       const localPlan = planBuddyAction({ message: trimmed, context, incomes: base.incomes, variablePlan: base.variablePlan, householdProfile: base.householdProfile, pendingAction: pending });
-      const recentMessages = base.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
-      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
+      const recentMessages = base.chatMessages.slice(-18).map(m => ({ role: m.role === 'system' ? 'assistant' : m.role, content: m.content }));
+      const conversationSummary = base.buddySession?.conversationSummary;
+      const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, conversation: { recentMessages, summary: conversationSummary }, safeContext: context, requestMetadata: { currentDate, locale: 'sv-SE', workspaceId: base.activeWorkspaceId, capability: 'budget_buddy', userRequestedLocalOnly: false } }) });
       const data = await response.json();
       const proposedAction = data.proposedAction || localPlan.proposedAction;
       const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || 'Jag kunde inte svara just nu. Inga ändringar gjordes.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
-      let nextState: AppState = appendAiLog({ ...base, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(base.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : base.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : base.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || base.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : base.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: 'sent' });
+      const toolUsage = data.toolUsage || { usedTools: [], dataCategories: [], outcome: data.source === 'openai' ? 'answered' : 'fallback' };
+      const newSummary = updateBuddyConversationSummary(base.buddySession?.conversationSummary, trimmed, reply.content, proposedAction);
+      let nextState: AppState = appendAiLog({ ...base, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(base.buddySession || {}), conversationSummary: newSummary, currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : base.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : base.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || base.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : base.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: data.source === 'openai' ? 'sent' : 'failed', dataCategories: toolUsage.dataCategories || [], summaryFields: { toolsUsed: toolUsage.usedTools || [], fieldCounts: { categories: (toolUsage.dataCategories || []).length } }, warningsIncluded: toolUsage.usedTools?.length ? [`Verktyg: ${toolUsage.usedTools.join(', ')}`] : [] });
       if (proposedAction) {
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: proposedAction.type === 'choose_income_to_update' ? 'needs_user_choice' : 'proposed', message: trimmed, reason: localPlan.explanationHints?.join(' ') });
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: 'rendered', message: proposedAction.title });
@@ -679,10 +707,8 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       setPendingAiQuestion(null);
       setState(nextState);
     } catch {
-      const reply = makeBuddyReply(trimmed, { summary, detection, rules: state.rules });
-      setState({ ...state, chatMessages: [...afterUserState.chatMessages, { ...reply, content: `${reply.content}
-
-Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — detta är ett lokalt tryggt fallback-svar.` }] });
+      const reply: ChatMessage = { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: 'Jag kunde inte få fram ett AI-svar just nu. Inga ändringar gjordes. I lokalt läge kan jag hjälpa med Budgetöversikt, marginal och vissa säkra förslag — men jag vill inte ersätta samtalet med en irrelevant Budgetsammanfattning.' };
+      setState({ ...state, chatMessages: [...afterUserState.chatMessages, reply] });
     } finally {
       setBuddyBusy(false);
     }
@@ -722,6 +748,12 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     setLocalAiCardDismissed(true);
     setPendingAiQuestion(null);
   }
+  function startNewConversation() {
+    const meaningful = state.chatMessages.length > 1 || state.buddySession?.conversationSummary;
+    if (meaningful && !window.confirm('Starta ny Budget Buddy-konversation? Budget, actionhistorik och AI-logg sparas. Chatt och samtalssammanfattning rensas.')) return;
+    setPendingAiQuestion(null);
+    setState({ ...state, chatMessages: [initialBuddyMessage()], buddySession: { ...(state.buddySession || {}), conversationSummary: undefined } });
+  }
 
   function actionSummary(action: BuddyProposedAction) {
     const riskText = action.riskLevel === 'high' ? 'Hög risk — dubbelkolla extra' : action.riskLevel === 'medium' ? 'Medelrisk — kräver tydligt ja' : action.riskLevel === 'low' ? 'Låg risk' : null;
@@ -741,14 +773,14 @@ Obs: Budget Buddy kunde inte svara via AI just nu. Inga ändringar gjordes — d
     return <div className="stack">{preview}<p className="hint">Ingen direkt ändring görs utan bekräftelse.</p></div>;
   }
   return <Card className="chat-shell">
-    <div className="chat-header"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div><div className="row"><BudgetBuddyAiStatus status={aiStatus} />{aiStatus === 'active' && <button className="btn small ghost" onClick={openPrivacyAiLog}>Se vad AI såg</button>}</div></div></div>
+    <div className="chat-header"><div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><div><h2 style={{ margin: 0 }}>Budget Buddy ✨</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>Din Budget-kompis. Inget ändras förrän du säger ja.</p></div><div className="row"><BudgetBuddyAiStatus status={aiStatus} />{aiStatus === 'active' && <span className="hint">hämtar bara relevant Budgetinformation</span>}{aiStatus === 'active' && <button className="btn small ghost" onClick={openPrivacyAiLog}>Se vad AI såg</button>}<button className="btn small ghost" onClick={startNewConversation}>Ny konversation</button></div></div></div>
     <div className="chat-messages" ref={scrollRef}>
       {aiStatus !== 'active' && (!localAiCardDismissed || pendingAiQuestion) && <BudgetBuddyAiActivationCard status={aiStatus} variant="full" onActivate={activateFromBuddy} onContinueLocal={continueLocalBuddy} onOpenAiInfo={openPrivacyAiInfo} activationPending={aiActivationPending} successMessage={pendingAiQuestion ? 'Aktivera för att fortsätta med din senaste fråga.' : undefined} />}
       {state.chatMessages.map((m, index) => <div key={m.id} className={`message ${m.role}`}><div>{m.content}</div>{m.proposedAction && <div className="suggestion-box action-card"><h3>{m.proposedAction.title}</h3><p>{m.proposedAction.description}</p>{actionSummary(m.proposedAction)}<div className="row action-card-controls"><button className="btn primary" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'confirm')}>{m.proposedAction.confirmLabel || 'Skriv vilken inkomst'} </button><button className="btn" disabled={m.proposedAction.status !== 'pending'} onClick={() => applyOrCancel(m.proposedAction!, 'cancel')}>{m.proposedAction.cancelLabel}</button><span className={`pill ${m.proposedAction.status === 'applied' ? 'green' : m.proposedAction.status === 'cancelled' ? 'danger' : 'warn'}`} aria-live="polite">{m.proposedAction.status === 'pending' ? 'Föreslagen · inte ändrad än' : m.proposedAction.status === 'applied' ? 'Applicerad · Budgeten ändrad' : m.proposedAction.status === 'cancelled' ? 'Avbruten · inget ändrat' : m.proposedAction.status}</span></div></div>}{m.content.toLowerCase().includes('ångra') && <div className="message-actions"><button className="btn small" onClick={undoLast}>Ångra senaste</button></div>}{m.actions && <div className="message-actions">{m.actions.map((a, i) => <button className="btn small" key={i} onClick={() => runAction(a)}>{a.label}</button>)}</div>}</div>)}
     </div>
     <div className="chat-footer">
       <div className="quick-choice-anchor"><button ref={quickChoicesTriggerRef} className="btn small ghost quick-choice-trigger" type="button" aria-haspopup="dialog" aria-expanded={quickChoicesOpen} aria-controls={quickChoicesId} disabled={buddyBusy} onClick={() => setQuickChoicesOpen(open => !open)}>Snabbval ✨</button>{quickChoicesOpen && <div id={quickChoicesId} ref={quickChoicesRef} className="quick-choice-popover" role="dialog" aria-modal="false" aria-labelledby={`${quickChoicesId}-title`}><div className="quick-choice-head"><h3 id={`${quickChoicesId}-title`}>Vad vill du ha hjälp med?</h3><button className="btn small ghost" type="button" onClick={() => { setQuickChoicesOpen(false); quickChoicesTriggerRef.current?.focus(); }} aria-label="Stäng snabbval">×</button></div>{(['Förstå', 'Förbättra', 'Ändra', 'Import och koll'] as BuddySuggestionGroup[]).map(group => <section className="quick-choice-group" key={group} aria-labelledby={`${quickChoicesId}-${group}`}><h4 id={`${quickChoicesId}-${group}`}>{group}</h4>{buddySuggestionItems.filter(item => item.group === group).map(item => <button data-suggestion-item="true" className="quick-choice-item" type="button" key={item.label} onClick={() => handleSuggestion(item.message || item.label)}><span><b>{item.label}</b>{item.description && <small>{item.description}</small>}</span><span aria-hidden="true">›</span></button>)}</section>)}</div>}</div><form className="chat-input" onSubmit={handleComposerSubmit}><textarea className="textarea" rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={handleComposerKeyDown} onCompositionStart={() => setComposerComposing(true)} onCompositionEnd={() => setComposerComposing(false)} placeholder="Fråga om din Budget…" /><button className="btn primary send-button" type="submit" disabled={buddyBusy || !draft.trim()} aria-label="Skicka meddelande"><span className="send-button-label">{buddyBusy ? 'Tänker…' : 'Skicka'}</span><span className="send-button-icon" aria-hidden="true">➤</span></button></form>
-      {buddyBusy && <p className="thinking-note" role="status">Budget Buddy tänker…</p>}
+      {buddyBusy && <p className="thinking-note" role="status">Budget Buddy räknar på din Budget när det behövs…</p>}
     </div>
   </Card>;
 }
@@ -1177,7 +1209,7 @@ function PrivacyCenterView({ state, setState, onReset, privacyFocus, onPrivacyFo
   return <><PageTitle title="Sekretess & data" subtitle="Förstå, exportera och radera din data. Juridiska texter är utkast och kräver slutlig granskning före produktion." />
     <Card className="soft"><h3>Översikt</h3><div className="grid grid-3 compact-grid"><MetricCard label="Lagring" value={normalized.accounts.length || normalized.transactions.length || normalized.incomes.length ? 'Lokal data finns' : 'Ingen lokal Budgetdata'} /><MetricCard label="Molnsynk" value="Kan inte verifieras i demon" /><MetricCard label="AI" value={budgetBuddyAiStatusLabel(aiStatus)} /><MetricCard label="Senaste AI-kontext" value={latestAi ? new Date(latestAi.createdAt).toLocaleString('sv-SE') : 'Ingen skickad'} /><MetricCard label="Export" value="Tillgänglig lokalt" /><MetricCard label="Radering" value="Lokal radering finns" /></div></Card>
     <details open><summary><b>Din datalagring</b></summary><Card><h3>Data- och säkerhetsstatus</h3><div className="stack"><div className="list-line"><span>Local storage</span><span className="pill">configured</span></div><div className="list-line"><span>Authentication</span><span className="pill">signed out/kan inte verifieras här</span></div><div className="list-line"><span>Cloud sync</span><span className="pill">unknown</span></div><div className="list-line"><span>AI raw-transaction protection</span><span className="pill green">verified by code path</span></div><div className="list-line"><span>Legal identity</span><span className="pill">missing</span></div></div><p className="hint">Klirr visar inte påståenden om kryptering, region, full säkerhet eller regelefterlevnad när detta inte kan verifieras i demon.</p></Card></details>
-    <details ref={aiInfoRef} open><summary><b>AI & Budget Buddy</b></summary><Card><div ref={aiControlsRef} tabIndex={-1}><h3>Använd AI-funktioner</h3><BudgetBuddyAiStatus status={aiStatus} /><p>Budgeten fungerar även utan AI. Stäng av AI är en preferens; Återkalla AI-samtycke är ett separat juridiskt val.</p><div className="row"><button className="btn primary" disabled={aiStatus === 'active'} onClick={enableAi}>Aktivera AI och godkänn AI-information</button><button className="btn" disabled={aiStatus === 'disabled'} onClick={disableAi}>Stäng av AI</button><button className="btn danger" disabled={!aiConsentOk} onClick={withdrawAi}>Återkalla AI-samtycke</button></div><p className="hint">Nuvarande AI-samtycke: {aiConsentOk ? 'Godkänt' : 'Saknas eller återkallat'} · version {legalDocumentConfig.aiInfoVersion}</p></div></Card><Card><div ref={aiLogRef} tabIndex={-1}><h3>Vad AI såg</h3>{normalized.aiContextLog?.length ? <div className="stack">{[...(normalized.aiContextLog || [])].reverse().map(entry => <details key={entry.id}><summary aria-controls={entry.id} aria-expanded="false">{new Date(entry.createdAt).toLocaleString('sv-SE')} · {entry.purpose} · {entry.destinationLabel} · {entry.outcome}</summary><div id={entry.id} className="stack"><p>Kategorier: {entry.dataCategories.join(', ')}</p><pre className="copy-box">{JSON.stringify(entry.summaryFields, null, 2)}</pre><p>Varningar/counts: {entry.warningsIncluded.join(', ') || 'Inga'}</p><p>Råa importerade transaktionsrader ingick inte.</p>{entry.failureReason && <p>Orsak: {entry.failureReason}</p>}</div></details>)}</div> : <p>Ingen AI-förfrågan har skickats ännu.</p>}<button className="btn danger" disabled={!normalized.aiContextLog?.length} onClick={() => window.confirm('Rensa AI-transparenshistorik? Budgetdata påverkas inte.') && setState({ ...normalized, aiContextLog: [] })}>Rensa AI-transparenshistorik</button></div></Card></details>
+    <details ref={aiInfoRef} open><summary><b>AI & Budget Buddy</b></summary><Card><div ref={aiControlsRef} tabIndex={-1}><h3>Använd AI-funktioner</h3><BudgetBuddyAiStatus status={aiStatus} /><p>Budgeten fungerar även utan AI. Stäng av AI är en preferens; Återkalla AI-samtycke är ett separat juridiskt val.</p><div className="row"><button className="btn primary" disabled={aiStatus === 'active'} onClick={enableAi}>Aktivera AI och godkänn AI-information</button><button className="btn" disabled={aiStatus === 'disabled'} onClick={disableAi}>Stäng av AI</button><button className="btn danger" disabled={!aiConsentOk} onClick={withdrawAi}>Återkalla AI-samtycke</button></div><p className="hint">Nuvarande AI-samtycke: {aiConsentOk ? 'Godkänt' : 'Saknas eller återkallat'} · version {legalDocumentConfig.aiInfoVersion}</p></div></Card><Card><div ref={aiLogRef} tabIndex={-1}><h3>Vad AI såg</h3><p className="hint">Budget Buddy hämtar bara de delar av Budgeten som behövs för frågan. Identitets- och allmänna frågor kan därför visa noll Budgetverktyg.</p>{normalized.aiContextLog?.length ? <div className="stack">{[...(normalized.aiContextLog || [])].reverse().map(entry => <details key={entry.id}><summary aria-controls={entry.id} aria-expanded="false">{new Date(entry.createdAt).toLocaleString('sv-SE')} · {entry.purpose} · {entry.destinationLabel} · {entry.outcome}</summary><div id={entry.id} className="stack"><p>Kategorier: {entry.dataCategories.join(', ') || 'Inga Budgetdata-kategorier'}</p><pre className="copy-box">{JSON.stringify(entry.summaryFields, null, 2)}</pre><p>Varningar/counts: {entry.warningsIncluded.join(', ') || 'Inga'}</p><p>Råa importerade transaktionsrader ingick inte.</p>{entry.failureReason && <p>Orsak: {entry.failureReason}</p>}</div></details>)}</div> : <p>Ingen AI-förfrågan har skickats ännu.</p>}<button className="btn danger" disabled={!normalized.aiContextLog?.length} onClick={() => window.confirm('Rensa AI-transparenshistorik? Budgetdata påverkas inte.') && setState({ ...normalized, aiContextLog: [] })}>Rensa AI-transparenshistorik</button></div></Card></details>
     <details><summary><b>Samtycken</b></summary><Card><h3>Samtycken</h3><p>Villkor och integritetspolicy kan visas och versionsspåras utan att skapa en blockerande demo-vägg. Optional analytics/marketing används inte.</p><div className="list-line"><span>AI-funktioner</span><b>{aiConsentOk ? 'Godkänt' : 'Inte godkänt'}</b></div><div className="list-line"><span>Analys</span><b>Används inte</b></div><div className="list-line"><span>Marknadsföring</span><b>Används inte</b></div><pre className="copy-box">{JSON.stringify(normalized.consentRecords || [], null, 2)}</pre></Card></details>
     <details><summary><b>Exportera data</b></summary><Card><h3>Exportera alla mina data</h3><p className="hint">JSON-exporten skapas lokalt och innehåller lokalt tillgänglig Budgetdata, importerade transaktioner, Budget Buddy-historik, samtycken och AI-transparenslogg. Den hämtar inte cloud-only-data från tredje part.</p><div className="grid grid-3 compact-grid"><MetricCard label="Workspaces" value={String(exportData.manifest.workspaceCount)} /><MetricCard label="Transaktioner" value={String(exportData.manifest.transactionCount)} /><MetricCard label="AI-loggar" value={String(exportData.manifest.aiLogCount)} /></div><button className="btn primary" onClick={exportAll}>Exportera alla mina data</button></Card></details>
     <details><summary><b>Radera data och konto</b></summary><Card><h3>Vad vill du radera?</h3><select className="select" value={deleteKind} onChange={e => setDeleteKind(e.target.value as any)}><option value="budget">Rensa aktiv Budget</option><option value="local">Radera all lokal data</option><option value="cloud">Radera molndata</option><option value="user">Radera användarkonto</option></select><p className="hint">Förhandsgranskning: {deleteKind === 'budget' ? 'Rensar lokal Budget i aktiv demo-workspace. Samtycken bevaras.' : deleteKind === 'local' ? 'Rensar localStorage för Klirr i denna webbläsare. Molndata påverkas inte.' : 'Inte tillgängligt i denna demo; ingen simulerad framgång visas.'}</p><button className="btn" onClick={exportAll}>Exportera mina data först</button><label>Skriv RADERA för lokal Budget-rensning<input className="input" value={confirmText} onChange={e => setConfirmText(e.target.value)} /></label><button className="btn danger" onClick={runDeletion}>Kör vald radering</button>{result && <p role="status">{result}</p>}</Card></details>

@@ -355,7 +355,18 @@ export interface BuddyActionHistoryEntry {
   budgetHealthReasons?: string[];
 }
 
+export interface BuddyConversationSummary {
+  updatedAt: string;
+  topic?: string;
+  activeGoal?: string;
+  userPreferences?: string[];
+  establishedFacts?: string[];
+  decisions?: string[];
+  unresolvedQuestion?: string;
+}
+
 export interface BuddySession {
+  conversationSummary?: BuddyConversationSummary;
   currentGoal?: 'increase_margin' | 'make_variable_plan' | 'fix_income' | 'review_musts' | 'find_savings' | 'crisis_budget';
   preferredStyle?: 'safe' | 'balanced' | 'flexible' | 'crisis';
   lastProposedActionId?: string;

@@ -32,3 +32,7 @@ Avaktivering betyder “Stäng av AI”: den sätter `aiEnabled = false` men åt
 Om en Buddy-fråga blockeras av AI-status sparas frågan i sessionen så att aktivering i Buddy kan återuppta exakt samma fråga en gång utan en extra användarbubbla. Hem- och Settings-aktivering skickar aldrig en AI-förfrågan.
 
 Demo-data ersätter Budget-/demo-innehåll men bevarar privacy preferences, consent records och AI-transparenslogg. Full lokal återställning kan återgå till inaktiv AI enligt initialt state.
+
+## Budget Buddy verktygsprivacy
+
+Budget Buddy Conversation 2.0 skickar inte hela Budgetkontexten som användartext till modellen. Servern tar emot en Privacy-säker kontext och modellen får bara relevanta sammanfattade delar via verktyg. “Vad AI såg” loggar verktygsnamn, datakategorier, fältsammanfattningar/counts och outcome, men inte råa transaktioner, dolda resonemang, systemprompt eller hemligheter.
