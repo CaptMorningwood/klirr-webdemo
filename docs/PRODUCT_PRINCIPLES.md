@@ -119,3 +119,7 @@ Tidigare betalprinciper är pausade och ersatta av beslutet ovan. Se `docs/FUTUR
 ## Budget Buddy AI-aktivering
 
 Budget Buddy AI ska kunna aktiveras där användaren möter funktionen, utan att Privacy-samtycket blir otydligt eller kringgås. Hem, Budget Buddy och Sekretess/Inställningar ska därför använda samma härledda AI-status och samma aktiveringshjälpare. AI är fortsatt av som standard och aktivering får inte automatiskt skicka en fråga från Hem eller Inställningar.
+
+## Budget Buddy Conversation 2.0
+
+Budget Buddy ska svara på användarens faktiska fråga först. Budgetdata är ett verktyg, inte ett obligatoriskt innehåll i varje svar. AI sköter samtalet; deterministiska verktyg sköter exakta beräkningar och föreslagna ändringar. En diskussion ska inte bli ett actionkort utan att användaren vill gå vidare.
