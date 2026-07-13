@@ -1,6 +1,6 @@
 # Klirr v1.0.2 beta foundation
 
-Klirr hjälper användaren förstå vad livet kostar varje månad: månadens måsten, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
+Klirr hjälper användaren förstå vad livet kostar varje månad: månadens fasta utgifter, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
 
 Den här versionen är byggd för att fungera på två sätt:
 

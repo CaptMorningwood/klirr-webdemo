@@ -28,7 +28,7 @@ Klirr ska främst svara på:
 
 - Vad kostar ditt liv varje månad just nu?
 - Hur ser din Budget ut så länge inget förändras?
-- Vad har förändrats i dina återkommande kostnader eller inkomster?
+- Vad har förändrats i dina fasta utgifter eller inkomster?
 - Hur hållbar är din Budget framåt?
 
 Månaden är en beräkningsenhet, inte produktens huvudberättelse.
@@ -50,7 +50,7 @@ Budget Buddys uppdrag är att:
 - förstå användarens Budget
 - skydda Budgeten
 - förbättra Budgeten
-- förklara återkommande kostnader och inkomster
+- förklara fasta utgifter och inkomster
 - föreslå konkreta, säkra förändringar
 
 Budget Buddy ska alltid koppla större råd och åtgärder tillbaka till hur Budgeten påverkas.
@@ -75,7 +75,7 @@ Klirr ska inte:
 - svälta matbudgeten för att skapa sparande
 - sätta alla mänskliga behov till noll i en normal Budget
 - kalla en plan trygg om den saknar marginal
-- pressa återkommande kostnader till orimliga nivåer
+- pressa fasta utgifter till orimliga nivåer
 
 Budgeten ska vara möjlig att leva med, inte bara möjlig att summera.
 
@@ -85,7 +85,7 @@ Nya funktioner ska kunna svara ja på minst en av dessa frågor:
 
 1. Hjälper detta användaren förstå vad livet kostar varje månad just nu?
 2. Hjälper detta användaren bygga eller skydda en hållbar Budget?
-3. Gör detta återkommande inkomster, kostnader, rörlig Budget eller marginal tydligare?
+3. Gör detta återkommande inkomster, kostnader, rörliga utgifter eller marginal tydligare?
 4. Hjälper detta användaren fatta ett bättre beslut om Budgeten?
 
 Om svaret är nej hör funktionen sannolikt inte hemma i Klirr.

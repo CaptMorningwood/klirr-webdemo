@@ -47,7 +47,7 @@ describe('post-import summary guidance', () => {
   });
 
   it('uses cleanup handoff message without transaction data', () => {
-    expect(importBuddyCleanupMessage).toBe('Städa min budget efter importen');
+    expect(importBuddyCleanupMessage).toBe('Städa min Budget efter importen');
     expect(importBuddyCleanupMessage).not.toMatch(/\d{4}-\d{2}-\d{2}|;|,/);
   });
 });

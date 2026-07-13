@@ -20,7 +20,7 @@ describe('expandable economic item pattern', () => {
   it('covers the audited economic views with the shared row pattern', () => {
     const occurrences = app.match(/<ExpandableBudgetItem/g) || [];
     expect(occurrences.length).toBeGreaterThanOrEqual(7);
-    expect(app).toContain('Importerade måsten redigeras som overrides. Kontoutdraget ändras inte.');
+    expect(app).toContain('Importerade fasta utgifter redigeras som overrides. Kontoutdraget ändras inte.');
     expect(app).toContain('Konton används för att förstå interna överföringar');
   });
 

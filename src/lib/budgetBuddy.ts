@@ -28,7 +28,7 @@ export function initialBuddyMessage(): ChatMessage {
     id: uid('msg'),
     role: 'assistant',
     createdAt: todayIso(),
-    content: 'Hej! Jag är Budget Buddy. Jag finns för att skydda och förbättra din Budget 💚 Jag hjälper dig förstå vad livet kostar varje månad just nu, hitta återkommande kostnader och bygga marginal. Fråga mig till exempel: ”Vad ska jag göra först?” eller ”Vad kan göra Budgeten mer hållbar?”',
+    content: 'Hej! Jag är Budget Buddy. Jag finns för att skydda och förbättra din Budget 💚 Jag hjälper dig förstå vad livet kostar varje månad just nu, hitta fasta utgifter och bygga marginal. Fråga mig till exempel: ”Vad ska jag göra först?” eller ”Vad kan göra Budgeten mer hållbar?”',
   };
 }
 
@@ -48,30 +48,30 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
   const actions: BuddyAction[] = [];
 
   if (q.includes('först') || q.includes('börja') || q.includes('nästa')) {
-    content = `Jag skulle börja i den här ordningen:\n\n1. Granska oklara poster (${ctx.detection.reviewItems.length} st) så kalkylen blir rätt.\n2. Kontrollera återkommande kostnader: ${fmt(s.fixedTotal)}.\n3. Titta på din marginal efter hela planen: ${fmtSigned(s.remainingAfterPlan)}.\n\nOm marginalen är låg är det mest värdefullt att justera Rörlig Budget eller testa scenario på en större kostnad, inte fastna i småköp direkt.`;
+    content = `Jag skulle börja i den här ordningen:\n\n1. Granska oklara poster (${ctx.detection.reviewItems.length} st) så kalkylen blir rätt.\n2. Kontrollera fasta utgifter: ${fmt(s.fixedTotal)}.\n3. Titta på din marginal efter hela planen: ${fmtSigned(s.remainingAfterPlan)}.\n\nOm marginalen är låg är det mest värdefullt att justera Rörliga utgifter eller testa scenario på en större kostnad, inte fastna i småköp direkt.`;
     actions.push({ label: 'Gå till Import & granskning', tab: 'importReview' }, { label: 'Visa Plan', tab: 'plan' }, { label: 'Testa scenario', tab: 'scenarios' });
   } else if (q.includes('förklara') || q.includes('ekonomi') || q.includes('sammanfatta')) {
-    content = `Så här ser din Budget ut just nu:\n\n• Inkomster: ${fmt(s.totalIncome)}\n• Återkommande kostnader: ${fmt(s.fixedTotal)}\n• Kvar efter måsten: ${fmtSigned(s.remainingAfterFixed)}\n• Rörlig Budget: ${fmt(s.variablePlanTotal)}\n• Kvar efter total plan: ${fmtSigned(s.remainingAfterPlan)}\n\nDe största posterna är:\n${drivers.map((d, i) => `${i + 1}. ${d.label}: ${fmt(d.amount)}`).join('\n')}`;
+    content = `Så här ser din Budget ut just nu:\n\n• Inkomster: ${fmt(s.totalIncome)}\n• Fasta utgifter: ${fmt(s.fixedTotal)}\n• Kvar efter fasta utgifter: ${fmtSigned(s.remainingAfterFixed)}\n• Rörliga utgifter: ${fmt(s.variablePlanTotal)}\n• Kvar efter total plan: ${fmtSigned(s.remainingAfterPlan)}\n\nDe största posterna är:\n${drivers.map((d, i) => `${i + 1}. ${d.label}: ${fmt(d.amount)}`).join('\n')}`;
     actions.push({ label: 'Öppna översikt', tab: 'dashboard' }, { label: 'Öppna Plan', tab: 'plan' });
   } else if (q.includes('kapa') || q.includes('spara') || q.includes('minska') || q.includes('förbättra')) {
     const variable = [...s.variableItems].sort((a, b) => b.amount - a.amount).slice(0, 4);
-    content = `Tre rimliga förbättringsspår:\n\n1. Justera Rörlig Budget. Det är snabbast och påverkar direkt. Rörlig Budget är nu ${fmt(s.variablePlanTotal)}.\n2. Testa scenario på större valfria poster. Små abonnemang kan hjälpa, men en större kostnad gör mer skillnad.\n3. Bekräfta oklara poster så du inte budgeterar för engångar.\n\nStörsta rörliga/justerbara posterna just nu:\n${variable.map((v) => `• ${v.label}: ${fmt(v.amount)}`).join('\n') || 'Jag hittar inga rörliga poster än.'}`;
+    content = `Tre rimliga förbättringsspår:\n\n1. Justera Rörliga utgifter. Det är snabbast och påverkar direkt. Rörliga utgifter är nu ${fmt(s.variablePlanTotal)}.\n2. Testa scenario på större valfria poster. Små abonnemang kan hjälpa, men en större kostnad gör mer skillnad.\n3. Bekräfta oklara poster så du inte budgeterar för engångar.\n\nStörsta rörliga/justerbara posterna just nu:\n${variable.map((v) => `• ${v.label}: ${fmt(v.amount)}`).join('\n') || 'Jag hittar inga rörliga poster än.'}`;
     actions.push({ label: 'Gå till Plan', tab: 'plan' }, { label: 'Bygg scenario', tab: 'scenarios' });
   } else if (q.includes('vilka typer') || q.includes('letar klirr') || q.includes('måste') || q.includes('måsten') || q.includes('matköp') || q.includes('avanza') || q.includes('inte en utgift')) {
-    content = `Klirr letar efter vanliga måsten som boende, el/värme/vatten, försäkringar, lån/skulder, bredband, mobil, fack/a-kassa, gym, barn/familj och abonnemang. Matköp, fika, restaurang, apotek, drivmedel och parkering räknas oftast som rörliga köp i stället för återkommande måsten 💡\n\nAvanza, Nordnet, ISK, sparkonto, top-up och överföringar mellan egna konton behandlas normalt som sparande/interna överföringar, inte konsumtionsutgifter. Refunds/returer räknas inte som normal inkomst.`;
+    content = `Klirr letar efter vanliga fasta utgifter som boende, el/värme/vatten, försäkringar, lån/skulder, bredband, mobil, fack/a-kassa, gym, barn/familj och abonnemang. Matköp, fika, restaurang, apotek, drivmedel och parkering räknas oftast som rörliga köp i stället för återkommande fasta utgifter 💡\n\nAvanza, Nordnet, ISK, sparkonto, top-up och överföringar mellan egna konton behandlas normalt som sparande/interna överföringar, inte konsumtionsutgifter. Refunds/returer räknas inte som normal inkomst.`;
     actions.push({ label: 'Granska återkommande', tab: 'recurring' }, { label: 'Visa överföringar', tab: 'transfers' });
   } else if (q.includes('oklar') || q.includes('otydlig') || q.includes('granska')) {
     content = ctx.detection.reviewItems.length
       ? `Jag hittar ${ctx.detection.reviewItems.length} oklara poster. De vanligaste orsakerna är möjliga engångskostnader, dubletter, plusposter eller låg säkerhet i återkommande-detektionen. Börja med de största beloppen först.`
-      : 'Just nu finns inga oklara poster. Snyggt! Då är nästa steg att bekräfta återkommande utgifter och justera Rörlig Budget.';
+      : 'Just nu finns inga oklara poster. Snyggt! Då är nästa steg att bekräfta återkommande utgifter och justera Rörliga utgifter.';
     actions.push({ label: 'Gå till Import & granskning', tab: 'importReview' });
   } else if (q.includes('kris') || q.includes('stram')) {
     const removable = s.variableItems.filter(x => x.source === 'variablePlan').map(x => x.id);
-    content = `Krisläge betyder att vi bara räknar måsten och kapar Rörlig Budget tillfälligt.\n\nMed dagens siffror:\n• Måsten: ${fmt(s.fixedTotal)}\n• Kvar efter måsten: ${fmtSigned(s.remainingAfterFixed)}\n\nDet är inte ett långsiktigt liv, men det visar miniminivån för att skydda Budgeten.`;
+    content = `Krisläge betyder att vi bara räknar fasta utgifter och kapar Rörliga utgifter tillfälligt.\n\nMed dagens siffror:\n• Fasta utgifter: ${fmt(s.fixedTotal)}\n• Kvar efter fasta utgifter: ${fmtSigned(s.remainingAfterFixed)}\n\nDet är inte ett långsiktigt liv, men det visar miniminivån för att skydda Budgeten.`;
     actions.push({ label: 'Testa kris-scenario', tab: 'scenarios', scenarioOffIds: removable });
   } else if (q.includes('import') || q.includes('kontoutdrag') || q.includes('csv') || q.includes('syns inte') || q.includes('räknas inte') || q.includes('händer inget')) {
     if ((ctx.transactionCount || ctx.detection.recurring.length) && unconfirmedCandidates > 0) {
-      content = `Jag ser att transaktionerna är importerade, men ${unconfirmedCandidates} möjliga inkomster/måsten är inte bekräftade än 💡\n\nKlirr hittade ${incomeCandidates} möjliga inkomster och ${expenseCandidates} möjliga måsten/återkommande utgifter. De räknas inte automatiskt in i Översikt eller Återkommande kostnader förrän du bekräftar dem, så budgeten fortsätter vara framåtblickande.\n\nGå till Import & granskning → Återkommande och bekräfta lön, hyra, el, Telia eller andra poster som ska gälla framåt.`;
+      content = `Jag ser att transaktionerna är importerade, men ${unconfirmedCandidates} möjliga inkomster/fasta utgifter är inte bekräftade än 💡\n\nKlirr hittade ${incomeCandidates} möjliga inkomster och ${expenseCandidates} möjliga fasta utgifter/återkommande utgifter. De räknas inte automatiskt in i Översikt eller Fasta utgifter förrän du bekräftar dem, så budgeten fortsätter vara framåtblickande.\n\nGå till Import & granskning → Återkommande och bekräfta lön, hyra, el, Telia eller andra poster som ska gälla framåt.`;
       actions.push({ label: 'Granska återkommande', tab: 'recurring' }, { label: 'Visa oklara poster', tab: 'review' });
     } else {
       content = 'Ladda upp kontoutdrag under Importera. När du har importerat flera konton ska du markera vilka som är dina egna. Då kan Klirr räkna överföringar mellan dina egna konton som interna, inte som inkomst eller utgift.';
@@ -81,7 +81,7 @@ export function makeBuddyReply(question: string, ctx: BuddyContext): ChatMessage
     content = 'Regler är Klirrs sätt att komma ihåg dina beslut. Om du säger “Telia = streaming” eller “Matboden = mat” ska den regeln gå före automatisk gissning nästa gång.';
     actions.push({ label: 'Gå till regler', tab: 'rules' });
   } else {
-    content = `Jag kan hjälpa dig förstå din Budget, hitta återkommande kostnader att justera, granska oklara poster och visa var i Klirr du ska gå.\n\nJag kan också hjälpa dig hitta rätt i appen: Översikt, Plan, Import & granskning, Hushåll, Budget Buddy eller Mer.
+    content = `Jag kan hjälpa dig förstå din Budget, hitta fasta utgifter att justera, granska oklara poster och visa var i Klirr du ska gå.\n\nJag kan också hjälpa dig hitta rätt i appen: Översikt, Plan, Import & granskning, Hushåll, Budget Buddy eller Mer.
 
 Just nu kostar din Budget ${fmt(s.totalMonthlyPlan)} och marginalen efter planen är ${fmtSigned(s.remainingAfterPlan)}. Vad vill du titta på först?`;
     actions.push({ label: 'Vad ska jag göra först?', message: 'Vad ska jag göra först?' }, { label: 'Förklara min Budget', message: 'Förklara min Budget' });
@@ -90,17 +90,28 @@ Just nu kostar din Budget ${fmt(s.totalMonthlyPlan)} och marginalen efter planen
   return { id: uid('msg'), role: 'assistant', content, actions, createdAt: todayIso() };
 }
 
-export const buddySuggestions = [
-  'Städa min budget ✨',
-  'Vad ska jag göra först?',
-  'Förklara min Budget',
-  'Vad kan jag kapa?',
-  'Vad är oklart?',
-  'Gör krisbudget',
-  'Lägg till inkomst',
-  'Lägg till Måsten',
-  'Importera kontoutdrag',
-  'Skapa Rörlig Budget',
-  'Hur importerar jag kontoutdrag?',
-  'Hur ändrar jag konton?',
+export type BuddySuggestionGroup = 'Förstå' | 'Förbättra' | 'Ändra' | 'Import/hjälp';
+
+export type BuddySuggestion = {
+  group: BuddySuggestionGroup;
+  label: string;
+  description?: string;
+  message?: string;
+};
+
+export const buddySuggestionItems: BuddySuggestion[] = [
+  { group: 'Förstå', label: 'Förklara min Budget', description: 'Se inkomster, fasta utgifter, rörliga utgifter och marginal.' },
+  { group: 'Förstå', label: 'Vad ska jag göra först?', description: 'Få nästa steg för en mer komplett Budget.' },
+  { group: 'Förstå', label: 'Vad är oklart?', description: 'Hitta poster som behöver granskas.' },
+  { group: 'Förbättra', label: 'Vad kan jag kapa?', description: 'Se rimliga förbättringsspår.' },
+  { group: 'Förbättra', label: 'Städa min Budget', description: 'Kör en Budget Checkup.' },
+  { group: 'Förbättra', label: 'Hjälp mig förbättra Budgethälsan', description: 'Fokusera på Budgethälsa och marginal.' },
+  { group: 'Förbättra', label: 'Skapa en krisbudget', description: 'Gör ett tillfälligt stramt förslag.' },
+  { group: 'Ändra', label: 'Lägg till inkomst', description: 'Få hjälp att lägga till eller ändra inkomst.' },
+  { group: 'Ändra', label: 'Ändra fasta utgifter', description: 'Gå igenom fasta utgifter som påverkar Budgeten.' },
+  { group: 'Ändra', label: 'Ändra rörliga utgifter', description: 'Planera flexibla vardagsutgifter.' },
+  { group: 'Import/hjälp', label: 'Hur importerar jag kontoutdrag?', description: 'Få steg för bankimport.' },
+  { group: 'Import/hjälp', label: 'Hur ändrar jag konton?', description: 'Förstå konton och interna överföringar.' },
 ];
+
+export const buddySuggestions = buddySuggestionItems.map(item => item.label);

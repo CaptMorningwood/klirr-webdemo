@@ -66,7 +66,7 @@ describe('Budgethälsa', () => {
   it('maps strongest negative reasons to practical next steps', () => {
     const risky = calculateBudgetHealth({ summary: { ...baseSummary, fixedTotal: 25000, remainingAfterFixed: 5000, variablePlanTotal: 6000, totalMonthlyPlan: 31000, remainingAfterPlan: -1000, variableItems: [{ id: 'food', label: 'Mat', amount: 6000, category: 'Mat', source: 'variablePlan' }] }, state: {}, possibleIncomeDuplicates: [{}], visibleReviewCount: 4 });
     const steps = budgetHealthNextSteps(risky.reasons);
-    expect(steps.join(' ')).toMatch(/Rörlig Budget|minus/);
+    expect(steps.join(' ')).toMatch(/Rörliga utgifter|minus/);
     expect(steps.join(' ')).not.toMatch(/income-missing|negative-margin/);
   });
 

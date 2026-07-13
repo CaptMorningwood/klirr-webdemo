@@ -26,7 +26,7 @@ export function exportBudgetReport(summary: BudgetSummary, detection: DetectionR
     'Klirr månadsrapport',
     '',
     `Inkomster: ${fmt(summary.totalIncome)}`,
-    `Månadens måsten: ${fmt(summary.fixedTotal)}`,
+    `Fasta utgifter: ${fmt(summary.fixedTotal)}`,
     `Rörlig plan: ${fmt(summary.variablePlanTotal)}`,
     `Total månadsplan: ${fmt(summary.totalMonthlyPlan)}`,
     `Kvar efter plan: ${fmt(summary.remainingAfterPlan)}`,

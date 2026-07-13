@@ -9,7 +9,7 @@ Evaluate whether a new user understands:
 - what Budget Health means
 - how to use Budget Buddy safely
 
-The test should show whether Klirr feels coherent, trustworthy, mobile-friendly, and focused on recurring income, recurring costs, Rörlig Budget, margin, and a sustainable Budget.
+The test should show whether Klirr feels coherent, trustworthy, mobile-friendly, and focused on recurring income, recurring costs, Rörliga utgifter, margin, and a sustainable Budget.
 
 ## Recommended participants
 Run five moderated usability tests. Prefer a mix of:

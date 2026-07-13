@@ -6,15 +6,15 @@ Klirr hjälper användaren att bygga, förstå och skydda en hållbar **Budget**
 
 ## Budgeten är produkten
 
-Budgeten är Klirrs centrala produktkoncept: återkommande inkomster, Måsten, återkommande kostnader, Rörlig Budget och Marginal i ett sammanhållet system. Kalender­månaden är bara en beräkningsenhet.
+Budgeten består av inkomster, fasta utgifter, rörliga utgifter och marginal. Budgeten är Klirrs centrala produktkoncept: inkomster, fasta utgifter, rörliga utgifter och marginal i ett sammanhållet system. Kalender­månaden är bara en beräkningsenhet. Fasta utgifter är återkommande eller förutsägbara kostnader som normalt är bundna; rörliga utgifter är planerade flexibla vardagsutgifter.
 
-## Återkommande kostnader är sanningen
+## Fasta utgifter och importunderlag
 
 Klirr ska prioritera poster som fortsätter påverka Budgeten framåt. Importerade transaktioner är underlag för att hitta återkommande inkomster och kostnader, men de blir inte Budgetens sanning förrän användaren har bekräftat dem.
 
 ## Budget Buddy
 
-Budget Buddy finns för att skydda och förbättra användarens Budget. Buddy ska förklara hur ändringar påverkar hållbarhet, marginal, återkommande inkomster och återkommande kostnader. Buddy får föreslå åtgärder, men ska inte påstå att Budgeten förbättrats innan användaren har bekräftat och åtgärden har applicerats.
+Budget Buddy finns för att skydda och förbättra användarens Budget. Buddy ska förklara hur ändringar påverkar hållbarhet, marginal, återkommande inkomster och fasta utgifter. Buddy får föreslå åtgärder, men ska inte påstå att Budgeten förbättrats innan användaren har bekräftat och åtgärden har applicerats.
 
 ## Vad Klirr inte är
 
@@ -60,8 +60,8 @@ Preferred:
 - Budgethälsa
 - Budget Buddy
 - Budget Checkup
-- Rörlig Budget
-- Återkommande kostnader
+- Rörliga utgifter
+- Fasta utgifter
 - Marginal
 - Hållbar Budget
 
@@ -80,7 +80,7 @@ Skriv varmt, tydligt och konkret. Föredra språk som visar vad Budgeten betyder
 
 - “Ditt liv kostar just nu …”
 - “Din Budget har blivit starkare …”
-- “Dina återkommande kostnader har ökat …”
+- “Dina fasta utgifter har ökat …”
 - “Din Budget saknar marginal …”
 - “Det här gör Budgeten mer hållbar.”
 

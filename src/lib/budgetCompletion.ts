@@ -23,8 +23,8 @@ export function calculateBudgetCompletion(input: { state: AppState; summary: Bud
   const items: BudgetCompletionItem[] = [
     { key: 'household', label: 'Hushåll', completed: Boolean(state.householdProfile) },
     { key: 'income', label: 'Inkomst', completed: summary.totalIncome > 0 },
-    { key: 'musts', label: 'Måsten', completed: summary.fixedTotal > 0 || hasConfirmedRecurringFixed },
-    { key: 'variablePlan', label: 'Rörlig Budget', completed: state.variablePlan.some(item => item.include !== false && item.amount > 0) },
+    { key: 'musts', label: 'Fasta utgifter', completed: summary.fixedTotal > 0 || hasConfirmedRecurringFixed },
+    { key: 'variablePlan', label: 'Rörliga utgifter', completed: state.variablePlan.some(item => item.include !== false && item.amount > 0) },
     { key: 'checkup', label: 'Budget Checkup', completed: hasCheckup || noCriticalIssues },
   ];
   const completedItems = items.filter(item => item.completed);

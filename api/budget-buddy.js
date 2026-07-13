@@ -1,6 +1,6 @@
 const safeSystemPrompt = `Du är Budget Buddy i Klirr.
 
-Budget Buddy finns för att skydda och förbättra användarens Budget. Budgeten är produkten: återkommande inkomster, återkommande kostnader, Rörlig Budget och marginal. Beskriv ett ekonomiskt tillstånd just nu, inte en historisk månad.
+Budget Buddy finns för att skydda och förbättra användarens Budget. Budgeten är produkten: återkommande inkomster, fasta utgifter, Rörliga utgifter och marginal. Beskriv ett ekonomiskt tillstånd just nu, inte en historisk månad.
 
 Viktigast av allt: det ska kännas som att användaren chattar med en varm, smart och lite lättsam kompis som hjälper till att göra Budgeten tydligare och mer hållbar. Inte som en bank. Inte som en myndighet. Inte som en stel rådgivare.
 
@@ -72,25 +72,25 @@ Exempel på typ av beteende, kopiera inte formuleringarna exakt:
 
 Ditt jobb i Klirr:
 - hjälpa användaren fatta vad livet kostar varje månad
-- visa vad som är måsten
-- förklara vad som finns kvar efter måsten
+- visa vad som är fasta utgifter
+- förklara vad som finns kvar efter fasta utgifter
 - hjälpa användaren förstå varför Budgeten saknar marginal
 - hitta poster som verkar oklara
 - föreslå små, rimliga nästa steg
 - hjälpa användaren hitta rätt vy i Klirr
-- hjälpa till med rörlig budget och scenarier
+- hjälpa till med rörliga utgifter och scenarier
 - göra Budgeten mindre skamfylld och mer begripligt
 
 Vyer i Klirr som du kan hänvisa till:
 - Hem/Översikt: helhetsbild
-- Måsten: fasta kostnader och manuella måsten
+- Fasta utgifter: fasta kostnader och manuella fasta utgifter
 - Import: importera eller klistra in kontoutdrag
-- Plan/Rörlig Budget: planera mat, transport, nöje, övrigt och buffert
+- Plan/Rörliga utgifter: planera mat, transport, nöje, övrigt och buffert
 - Buddy/Budget Buddy: chatthjälpen
 - Inkomster: lägga till och ändra inkomster
 - Konton: hantera konton
 - Överföringar: granska interna överföringar
-- Återkommande: granska återkommande kostnader
+- Återkommande: granska fasta utgifter
 - Oklart: poster Klirr inte säkert kan tolka
 - Scenario: testa vad som händer om något ändras
 - Regler: skapa regler för kategorisering
@@ -126,7 +126,7 @@ Håll svaren ganska korta om användaren inte ber om mer. Hellre "här är förs
 När användaren frågar "vad ska jag göra först?":
 - välj det som ger mest koll snabbast
 - ge max 3 steg
-- börja ofta med Måsten, Oklart eller Rörlig Budget
+- börja ofta med Fasta utgifter, Oklart eller Rörliga utgifter
 - skriv som en kompis, men variera öppningen och undvik fasta standardfraser
 
 När Budgeten saknar marginal:
@@ -148,7 +148,7 @@ Säkerhetsgränser:
 - Ge inte juridisk rådgivning som om den vore säker.
 - Lova aldrig att ett ekonomiskt beslut är riskfritt.
 - Påstå aldrig att Budgeten har förbättrats innan användaren har bekräftat och åtgärden har applicerats.
-- Knyt större svar till hållbar Budget, återkommande kostnader, återkommande inkomster och marginal.
+- Knyt större svar till hållbar Budget, fasta utgifter, återkommande inkomster och marginal.
 - Ändra aldrig användarens data.
 - Du får föreslå ändringar i Klirr, men aldrig påstå att ändringen är genomförd förrän användaren har bekräftat och appen har applicerat den.
 - När du föreslår en ändring: sammanfatta exakt vad som ändras, fråga om användaren vill genomföra det, föreslå max en ändring åt gången och säg aldrig 'jag har uppdaterat' före bekräftelse.
@@ -309,7 +309,7 @@ function makeVariablePlanAction(message, context, recentMessages = []) {
   const suggestionItems = Array.isArray(suggestion?.items) && suggestion.items.length ? suggestion.items : current;
   const items = explicitItems.length ? (hasCompleteVariablePlan(explicitItems) ? explicitItems : mergeExplicitItemsWithSuggestion(explicitItems, suggestionItems)) : suggestionItems;
   if (!items.length) return null;
-  return { source: 'local-fallback', message: crisis ? 'Yes, jag ser krisläget 🛟💡 Jag föreslår en tillfällig food-first-plan — inget ändras förrän du säger ja ✅' : 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸✨ Här är ett tydligt förslag — inget ändras förrän du säger ja 🫶', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: crisis ? 'Använd tillfällig krisbudget' : 'Använd ny Rörlig Budget', description: crisis ? 'Det här är en tillfällig, stram plan. Inget ändras förrän du säger ja.' : 'Ersätt den Rörliga Budgeten med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: Number(context?.summary?.remainingAfterFixed || 0), marginLeft: Number(suggestion?.marginLeft ?? Math.max(0, Number(context?.summary?.remainingAfterFixed || 0) - items.reduce((sum, item) => sum + Number(item.amount || 0), 0))), mode: crisis ? 'crisis' : 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending', riskLevel: 'medium', undoable: true } };
+  return { source: 'local-fallback', message: crisis ? 'Yes, jag ser krisläget 🛟💡 Jag föreslår en tillfällig food-first-plan — inget ändras förrän du säger ja ✅' : 'Jag kan göra planen lite tryggare och mer buffertvänlig 💸✨ Här är ett tydligt förslag — inget ändras förrän du säger ja 🫶', actions: [], proposedAction: { id: uid('buddy_action'), type: 'update_variable_plan', title: crisis ? 'Använd tillfällig krisbudget' : 'Använd ny Rörliga utgifter', description: crisis ? 'Det här är en tillfällig, stram plan. Inget ändras förrän du säger ja.' : 'Ersätt den Rörliga Budgeten med det här förslaget. Inget ändras förrän du säger ja.', payload: { items: items.map(item => ({ id: item.id, label: item.label, amount: Math.max(0, Math.round(Number(item.amount || 0))), category: item.category || 'Rörligt', include: item.include !== false })), availableAfterFixed: Number(context?.summary?.remainingAfterFixed || 0), marginLeft: Number(suggestion?.marginLeft ?? Math.max(0, Number(context?.summary?.remainingAfterFixed || 0) - items.reduce((sum, item) => sum + Number(item.amount || 0), 0))), mode: crisis ? 'crisis' : 'safe', notes: suggestion?.note || 'Förslaget är beräknat deterministiskt av Klirr.' }, confirmLabel: 'Ja, använd planen', cancelLabel: 'Nej, behåll nuvarande', status: 'pending', riskLevel: 'medium', undoable: true } };
 }
 function deterministicActionReply(message, context, recentMessages = []) {
   return makeIncomeAction(message, context) || makeVariablePlanAction(message, context, recentMessages);
@@ -357,14 +357,14 @@ function fallbackReply(message, context) {
     return {
       source: 'local-fallback',
       message: pickRandom([
-        'Jag behöver lite mer att gå på innan jag kan hjälpa på riktigt 😊 Lägg in inkomst och måsten — eller importera ett kontoutdrag under Import — så tar vi det därifrån.',
-        'Just nu ser jag för lite budgetdata för att säga något smart 😊 Börja gärna med Inkomster och Måsten, eller klistra in kontoutdrag under Import, så kan jag hjälpa mer konkret 💸',
-        'Vi behöver ge Klirr lite mer att jobba med först 💡 Lägg in inkomsten och de viktigaste måstena, så kan jag börja hitta vad som gör Budgeten mindre hållbar.',
-        'Jag saknar själva kartan över Budgeten än så länge 🧾 Fyll i Inkomster och Måsten eller importera kontoutdrag, så kan vi reda ut nästa steg tillsammans ✅',
+        'Jag behöver lite mer att gå på innan jag kan hjälpa på riktigt 😊 Lägg in inkomst och fasta utgifter — eller importera ett kontoutdrag under Import — så tar vi det därifrån.',
+        'Just nu ser jag för lite budgetdata för att säga något smart 😊 Börja gärna med Inkomster och Fasta utgifter, eller klistra in kontoutdrag under Import, så kan jag hjälpa mer konkret 💸',
+        'Vi behöver ge Klirr lite mer att jobba med först 💡 Lägg in inkomsten och de viktigaste fasta utgifterna, så kan jag börja hitta vad som gör Budgeten mindre hållbar.',
+        'Jag saknar själva kartan över Budgeten än så länge 🧾 Fyll i Inkomster och fasta utgifter eller importera kontoutdrag, så kan vi reda ut nästa steg tillsammans ✅',
       ]),
       actions: [
         { label: 'Lägg in inkomst', tab: 'income' },
-        { label: 'Granska Måsten', tab: 'musts' },
+        { label: 'Granska fasta utgifter', tab: 'musts' },
         { label: 'Importera kontoutdrag', tab: 'import' },
       ],
     };
@@ -374,14 +374,14 @@ function fallbackReply(message, context) {
     return {
       source: 'local-fallback',
       message: pickRandom([
-        `Jag kör lite enklare demo-läge just nu 😅 Koppla OpenAI i Vercel för smartare svar. Det jag kan se är att du har ungefär ${formattedRemaining} kr kvar efter måsten — börja gärna med Måsten och bygg sedan en Rörlig Budget.`,
-        `Jag kör lite enklare hjärna just nu 😅 Men jag kan ändå hjälpa dig få koll: cirka ${formattedRemaining} kr finns kvar efter måsten. Börja med Måsten och Rörlig Budget ✅`,
-        `Jag är inte helt uppkopplad ännu 💡 Lägg in OpenAI API key i Vercel för bättre chattsvar. Tills dess: du verkar ha runt ${formattedRemaining} kr kvar efter fasta kostnader, så kolla Måsten först och planera det rörliga sen.`,
-        `Reservläget är på 💡 men grundspåret är tydligt: ungefär ${formattedRemaining} kr återstår efter måsten. Kika på Måsten först och sätt sedan en enkel rörlig budget 💸`,
+        `Jag kör lite enklare demo-läge just nu 😅 Koppla OpenAI i Vercel för smartare svar. Det jag kan se är att du har ungefär ${formattedRemaining} kr kvar efter fasta utgifter — börja gärna med Fasta utgifter och bygg sedan en Rörliga utgifter.`,
+        `Jag kör lite enklare hjärna just nu 😅 Men jag kan ändå hjälpa dig få koll: cirka ${formattedRemaining} kr finns kvar efter fasta utgifter. Börja med Fasta utgifter och Rörliga utgifter ✅`,
+        `Jag är inte helt uppkopplad ännu 💡 Lägg in OpenAI API key i Vercel för bättre chattsvar. Tills dess: du verkar ha runt ${formattedRemaining} kr kvar efter fasta kostnader, så kolla fasta utgifter först och planera det rörliga sen.`,
+        `Reservläget är på 💡 men grundspåret är tydligt: ungefär ${formattedRemaining} kr återstår efter fasta utgifter. Kika på fasta utgifter först och sätt sedan en enkel rörliga utgifter 💸`,
       ]),
       actions: [
-        { label: 'Gå till Rörlig Budget', tab: 'variablePlan' },
-        { label: 'Granska Måsten', tab: 'musts' },
+        { label: 'Gå till Rörliga utgifter', tab: 'variablePlan' },
+        { label: 'Granska fasta utgifter', tab: 'musts' },
       ],
     };
   }
@@ -391,7 +391,7 @@ function fallbackReply(message, context) {
     message: pickRandom([
       'Ajdå, Budget Buddy tappade tråden en sekund 😅 Testa igen om en stund, eller fortsätt kika runt i Klirr så länge.',
       'Något strulade när jag skulle svara 😅 Prova gärna igen — ibland räcker det med ett nytt försök 🙌',
-      'Jag fick inte ihop ett AI-svar just nu 🧾 Om det brådskar kan du börja med Måsten eller Rörlig Budget medan jag samlar mig ✅',
+      'Jag fick inte ihop ett AI-svar just nu 🧾 Om det brådskar kan du börja med fasta utgifter eller Rörliga utgifter medan jag samlar mig ✅',
       'Hoppsan, där blev det tekniskt knas. Skicka frågan igen om en stund så gör jag ett nytt försök.',
     ]),
     actions: [],

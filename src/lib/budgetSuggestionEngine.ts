@@ -91,7 +91,7 @@ function compareFoodGuideline(referenceAmount: number, proposedAmount: number, c
   const status: GuidelineStatus = differencePct < -0.15 ? 'below' : Math.abs(differencePct) <= 0.2 ? 'near' : differencePct <= 0.5 ? 'above' : 'far_above';
   const note = status === 'below'
     ? cashflowPrioritized
-      ? 'Mat ligger under riktvärdet för hushållets storlek. Förslaget prioriterar kassaflöde eftersom utrymmet efter måsten är lågt, så nivån behöver granskas manuellt.'
+      ? 'Mat ligger under riktvärdet för hushållets storlek. Förslaget prioriterar kassaflöde eftersom utrymmet efter fasta utgifter är lågt, så nivån behöver granskas manuellt.'
       : 'Mat ligger under riktvärdet för hushållets storlek — det kan bli tajt.'
     : status === 'near'
       ? 'Mat ligger nära Konsumentverkets riktvärde för liknande hushåll.'
@@ -168,7 +168,7 @@ export function suggestVariableBudget(input: {
   const profile = normalizeHouseholdProfile(input.householdProfile);
   const caps = getCategoryCaps({ available, householdProfile: profile, mode: input.mode });
   if (available <= 0) {
-    const note = 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska Måsten och inkomster innan du sätter en rörlig plan.';
+    const note = 'Klirr hittar inget utrymme efter fasta kostnader. Börja med att granska fasta utgifter och inkomster innan du sätter en rörlig plan.';
     const guidelineComparison = { food: compareFoodGuideline(getFoodReferenceAmount(profile), 0) };
     return { marginLeft: 0, buffer: 0, safetyTotal: 0, explanationNotes: [note], note, categoryCaps: caps, clampedCategories: [], overflowToSafety: 0, guidelineComparison, items: LABELS.map(([label, category], idx) => ({ id: `vp_suggest_${idx}`, label, amount: 0, category, include: true })) };
   }
