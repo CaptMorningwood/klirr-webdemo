@@ -115,3 +115,7 @@ AI-samtycke styr externa AI-anrop, inte tillgången till Budget Buddy.
 ## Arkiverade betalprinciper
 
 Tidigare betalprinciper är pausade och ersatta av beslutet ovan. Se `docs/FUTURE_PREMIUM.md`.
+
+## Budget Buddy AI-aktivering
+
+Budget Buddy AI ska kunna aktiveras där användaren möter funktionen, utan att Privacy-samtycket blir otydligt eller kringgås. Hem, Budget Buddy och Sekretess/Inställningar ska därför använda samma härledda AI-status och samma aktiveringshjälpare. AI är fortsatt av som standard och aktivering får inte automatiskt skicka en fråga från Hem eller Inställningar.
