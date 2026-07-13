@@ -9,6 +9,7 @@ import { BANK_FORMATS, type BankKey, detectBank, guessMapping, parseCsvToRows, p
 import { decodeTextFile } from './lib/fileDecoding';
 import { supportedBankFormats } from './lib/bankFormats';
 import { exportBudgetReport, exportTransactionsCsv } from './lib/exporters';
+import { downloadText } from './lib/exporters';
 import { fmt, fmtSigned, pct, todayIso, uid } from './lib/format';
 import { categorize } from './lib/rulesEngine';
 import { actionableCandidateReason, detectRecurring, getActionableRecurringCandidates } from './lib/recurrenceEngine';
@@ -28,6 +29,9 @@ import { budgetHealthImprovementMessage, budgetHealthNextSteps, budgetHealthShor
 import { buildBudgetDistribution, groupVariableDistribution, incomeSourceDistribution, marginSafety, mustsStatus, type Segment } from './lib/homeVisuals';
 import { Card, Empty, MetricCard, PageTitle } from './components/UI';
 import { AuthSyncPanel } from './components/AuthSyncPanel';
+import { addConsentRecord, appendAiLog, buildDataExport, defaultPrivacyPreferences, hasAcceptedConsent, legalDocumentConfig, normalizePrivacyState, withdrawAiConsent } from './lib/privacy';
+import { prepareSafeAiContext } from './lib/aiPrivacy';
+import licenseArtifact from './generated/licenses.json';
 
 const defaultVariablePlan: VariablePlanItem[] = [
   { id: 'vp_food', label: 'Mat och hushåll', amount: 6000, category: 'Vardag', include: true },
@@ -56,6 +60,9 @@ const initialState: AppState = {
   subscriptionPlan: 'pro',
   subscriptionStatus: 'active',
   entitlements: getEntitlements('pro'),
+  privacyPreferences: defaultPrivacyPreferences(),
+  consentRecords: [],
+  aiContextLog: [],
 };
 
 const nav: Array<{ id: TabId; label: string; shortLabel: string; icon: string }> = [
@@ -74,7 +81,7 @@ const drawerNav = nav.filter(item => !primaryMobileTabs.includes(item.id));
 type PlanSection = 'musts' | 'variablePlan' | 'scenarios';
 type ImportReviewSection = 'import' | 'accounts' | 'transactions' | 'transfers' | 'recurring' | 'review';
 type HouseholdSection = 'profile' | 'income';
-type MoreSection = 'rules' | 'settings';
+type MoreSection = 'rules' | 'settings' | 'privacy';
 
 const legacyTabMap: Partial<Record<TabId, { tab: TabId; section?: PlanSection | ImportReviewSection | HouseholdSection | MoreSection }>> = {
   musts: { tab: 'plan', section: 'musts' },
@@ -212,7 +219,7 @@ function reviewTypeLabel(type: string) {
 }
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => { const saved = loadState(); return { ...initialState, ...(saved || {}), onboarding: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted), onboardingCompleted: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted).status === 'COMPLETED', buddyActionHistory: saved?.buddyActionHistory || [] }; });
+  const [state, setState] = useState<AppState>(() => { const saved = loadState(); return normalizePrivacyState({ ...initialState, ...(saved || {}), onboarding: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted), onboardingCompleted: normalizeOnboardingState(saved?.onboarding, saved?.onboardingCompleted).status === 'COMPLETED', buddyActionHistory: saved?.buddyActionHistory || [] }); });
   const [tab, setTab] = useState<TabId>('dashboard');
   const [planSection, setPlanSection] = useState<PlanSection>('musts');
   const [importReviewSection, setImportReviewSection] = useState<ImportReviewSection>('import');
@@ -478,9 +485,10 @@ function ImportReviewView({ active, setActive, detection, state, setPartial, loa
 
 function MoreView({ active, setActive, state, setState, onReset, loadDemo, openOnboarding }: { active: MoreSection; setActive: (s: MoreSection) => void; state: AppState; setState: (s: AppState) => void; onReset: () => void; loadDemo: () => void; openOnboarding: () => void }) {
   return <><PageTitle title="Mer / Inställningar" subtitle="Regler, export, sync, demo-data och inställningar." />
-    <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }]} />
+    <SectionTabs<MoreSection> active={active} onChange={setActive} items={[{ id: 'rules', label: 'Regler' }, { id: 'settings', label: 'Inställningar' }, { id: 'privacy', label: 'Sekretess & data' }]} />
     {active === 'rules' && <RulesView rules={state.rules} setRules={(rules) => setState({ ...state, rules })} />}
     {active === 'settings' && <SettingsView state={state} setState={setState} loadDemo={loadDemo} onReset={onReset} openOnboarding={openOnboarding} restartOnboarding={() => { setState({ ...state, onboardingCompleted: false, onboarding: { ...normalizeOnboardingState(state.onboarding), status: 'MANUAL_PATH', path: 'manual', started: true, currentStep: 'household' } }); openOnboarding(); }} />}
+    {active === 'privacy' && <PrivacyCenterView state={state} setState={setState} onReset={onReset} />}
   </>;
 }
 
@@ -560,6 +568,12 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       applyOrCancel(pending, intent, afterUserState);
       return;
     }
+    const safeAi = prepareSafeAiContext({ state: afterUserState, summary, detection, userMessage: trimmed, requestType: 'budget_buddy_chat', purpose: 'Budget Buddy-fråga', visibleReviewCount, handledReviewCount });
+    if (!safeAi.allowed) {
+      const blockedState = appendAiLog(afterUserState, safeAi.logEntry);
+      setState({ ...blockedState, chatMessages: [...blockedState.chatMessages, { id: uid('msg'), role: 'assistant', createdAt: todayIso(), content: `${safeAi.reason}\n\nBudgeten fungerar även utan AI. Du kan fortsätta importera, granska och ändra Budgeten manuellt. Gå till Mer → Sekretess & data om du vill aktivera AI.` }] });
+      return;
+    }
     setState(afterUserState);
     setBuddyBusy(true);
     try {
@@ -568,14 +582,14 @@ function BudgetBuddyView({ state, setState, summary, detection, visibleReviewCou
       const actionableCandidates = getActionableRecurringCandidates(detection.recurring);
       const completion = calculateBudgetCompletion({ state, summary, detection, visibleReviewCount, handledReviewCount });
       const ob = normalizeOnboardingState(state.onboarding, state.onboardingCompleted);
-      const context = { onboardingStatus: ob.status, onboardingPath: ob.path, budgetCompletionPercentage: completion.percentage, missingSetupItems: completion.missingItems.map(item => item.label), summary, incomes: state.incomes, manualExpenses: state.manualExpenses, recurring: detection.recurring, variablePlan: state.variablePlan, householdProfile: normalizeHouseholdProfile(state.householdProfile), budgetSuggestion, pendingAction: pending, buddyActionHistory: state.buddyActionHistory, supportedBankFormats: supportedBankFormats().map(f => f.label), possibleEncodingIssue: state.transactions.some(t => t.importWarnings?.some(w => w.includes('encoding'))), knowledgeBaseCategories: knowledgeBaseCategories(), transactionCount: state.transactions.length, reviewCount: visibleReviewCount, visibleReviewCount, handledReviewCount, manualIncomeTotal: state.incomes.reduce((sum, i) => sum + (i.frequency === 'yearly' ? i.amount / 12 : i.frequency === 'quarterly' ? i.amount / 3 : i.amount), 0), recurringIncomeTotal: summary.incomeItems.filter(i => i.source === 'recurring').reduce((sum, i) => sum + i.amount, 0), totalIncome: summary.totalIncome, incomeItems: summary.incomeItems, possibleIncomeDuplicates, transfers: detection.transfers, transferDecisions: state.transferDecisions, householdProfileMissing: !state.householdProfile, transferCandidateCount: detection.transfers.length, transferCount: detection.transfers.length, recurringCandidateCountsByType: { income: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, fixed: actionableCandidates.filter(r => r.costTypeDefault === 'fixed').length, variable: actionableCandidates.filter(r => r.costTypeDefault === 'variable').length }, recurringCandidateCount: actionableCandidates.length, actionableIncomeCandidateCount: actionableCandidates.filter(r => r.costTypeDefault === 'income').length, actionableExpenseCandidateCount: actionableCandidates.filter(r => r.costTypeDefault !== 'income').length, confirmedRecurringCount: detection.recurring.filter(r => state.recurringDecisions[r.id]?.status === 'confirmed').length, unconfirmedRecurringCount: actionableCandidates.filter(r => state.recurringDecisions[r.id]?.status !== 'confirmed' && state.recurringDecisions[r.id]?.status !== 'rejected').length, rules: state.rules, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 };
+      const context = safeAi.context;
       const localPlan = planBuddyAction({ message: trimmed, context, incomes: state.incomes, variablePlan: state.variablePlan, householdProfile: state.householdProfile, pendingAction: pending });
       const recentMessages = state.chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/budget-buddy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, context, recentMessages, currentDate, currentMonth: new Date(currentDate).getMonth() + 1 }) });
       const data = await response.json();
       const proposedAction = data.proposedAction || localPlan.proposedAction;
       const reply: ChatMessage = { id: uid('msg'), role: 'assistant', content: data.message || localPlan.clarificationQuestion || 'Jag kunde inte svara just nu. Inga ändringar gjordes.', createdAt: todayIso(), actions: Array.isArray(data.actions) ? data.actions as BuddyAction[] : undefined, proposedAction };
-      let nextState: AppState = { ...state, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(state.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : state.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : state.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || state.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : state.buddySession?.lastDiscussedPlan } };
+      let nextState: AppState = appendAiLog({ ...state, chatMessages: [...afterUserState.chatMessages, reply], buddySession: { ...(state.buddySession || {}), currentGoal: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis_budget' : proposedAction?.type === 'update_variable_plan' ? 'make_variable_plan' : proposedAction?.type === 'update_income' ? 'fix_income' : state.buddySession?.currentGoal, preferredStyle: proposedAction?.type === 'update_variable_plan' && proposedAction.payload.mode === 'crisis' ? 'crisis' : state.buddySession?.preferredStyle, lastProposedActionId: proposedAction?.id || state.buddySession?.lastProposedActionId, lastDiscussedPlan: proposedAction?.type === 'update_variable_plan' ? proposedAction.payload.items.map((item: { label: string; amount: number; category: string }) => ({ label: item.label, amount: item.amount, category: item.category })) : state.buddySession?.lastDiscussedPlan } }, { ...safeAi.logEntry, outcome: 'sent' });
       if (proposedAction) {
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: proposedAction.type === 'choose_income_to_update' ? 'needs_user_choice' : 'proposed', message: trimmed, reason: localPlan.explanationHints?.join(' ') });
         nextState = appendBuddyActionHistory(nextState, { actionId: proposedAction.id, actionType: proposedAction.type, type: 'rendered', message: proposedAction.title });
@@ -1016,6 +1030,52 @@ function HouseholdView({ active, setActive, householdProfile, setHouseholdProfil
       </div></Card>
     </>}
     {active === 'income' && <IncomeView incomes={incomes} setIncomes={setIncomes} summary={summary} detection={detection} recurringDecisions={recurringDecisions} setRecurringDecisions={setRecurringDecisions} />}
+  </>;
+}
+
+
+function PrivacyCenterView({ state, setState, onReset }: { state: AppState; setState: (s: AppState) => void; onReset: () => void }) {
+  const normalized = normalizePrivacyState(state);
+  const prefs = normalized.privacyPreferences!;
+  const latestAi = normalized.aiContextLog && normalized.aiContextLog.length ? normalized.aiContextLog[normalized.aiContextLog.length - 1] : undefined;
+  const aiConsentOk = hasAcceptedConsent(normalized, 'ai_features', legalDocumentConfig.aiInfoVersion);
+  const exportData = buildDataExport(normalized);
+  const [deleteKind, setDeleteKind] = useState<'budget' | 'local' | 'cloud' | 'user'>('budget');
+  const [confirmText, setConfirmText] = useState('');
+  const [result, setResult] = useState('');
+  function enableAi() { setState(addConsentRecord({ ...normalized, privacyPreferences: { ...prefs, aiEnabled: true } }, { type: 'ai_features', documentVersion: legalDocumentConfig.aiInfoVersion, status: 'accepted', source: 'settings', locale: 'sv-SE' })); }
+  function disableAi() { setState(withdrawAiConsent(normalized)); }
+  function exportAll() {
+    const next = normalizePrivacyState({ ...normalized, privacyPreferences: { ...prefs, lastExportAt: new Date().toISOString() } });
+    setState(next);
+    downloadText(`klirr-dataexport-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(buildDataExport(next), null, 2), 'application/json;charset=utf-8');
+  }
+  function clearBudget() {
+    if (confirmText !== 'RADERA') return;
+    setState({ ...normalized, incomes: [], manualExpenses: [], variablePlan: defaultVariablePlan, recurringDecisions: {}, transferDecisions: {}, reviewDecisions: {}, scenarioOff: [], chatMessages: [initialBuddyMessage()], buddyActionHistory: [] });
+    setResult('Aktiv Budget rensades lokalt. Sekretessinställningar och samtyckeshistorik sparades. Molndata raderades inte.');
+  }
+  function runDeletion() {
+    if (deleteKind === 'budget') return clearBudget();
+    if (deleteKind === 'local') return onReset();
+    if (deleteKind === 'cloud') return setResult('Radera molndata: Inte tillgängligt i denna demo. Ingen lokal data ändrades.');
+    return setResult('Radera användarkonto: Inte tillgängligt i denna demo eftersom backendflöde för auth-radering saknas. Ingen lokal data ändrades.');
+  }
+  const legalDocs = [
+    ['Integritetspolicy', legalDocumentConfig.privacyPolicyVersion, legalDocumentConfig.policyEffectiveDate],
+    ['Användarvillkor', legalDocumentConfig.termsVersion, legalDocumentConfig.termsEffectiveDate],
+    ['AI-information', legalDocumentConfig.aiInfoVersion, 'Ej fastställd'],
+    ['Cookie- och spårningsinformation', 'utkast-0.1', 'Ej fastställd'],
+  ];
+  return <><PageTitle title="Sekretess & data" subtitle="Förstå, exportera och radera din data. Juridiska texter är utkast och kräver slutlig granskning före produktion." />
+    <Card className="soft"><h3>Översikt</h3><div className="grid grid-3 compact-grid"><MetricCard label="Lagring" value={normalized.accounts.length || normalized.transactions.length || normalized.incomes.length ? 'Lokal data finns' : 'Ingen lokal Budgetdata'} /><MetricCard label="Molnsynk" value="Kan inte verifieras i demon" /><MetricCard label="AI" value={prefs.aiEnabled && aiConsentOk ? 'Aktiverad' : 'Avstängd'} /><MetricCard label="Senaste AI-kontext" value={latestAi ? new Date(latestAi.createdAt).toLocaleString('sv-SE') : 'Ingen skickad'} /><MetricCard label="Export" value="Tillgänglig lokalt" /><MetricCard label="Radering" value="Lokal radering finns" /></div></Card>
+    <details open><summary><b>Din datalagring</b></summary><Card><h3>Data- och säkerhetsstatus</h3><div className="stack"><div className="list-line"><span>Local storage</span><span className="pill">configured</span></div><div className="list-line"><span>Authentication</span><span className="pill">signed out/kan inte verifieras här</span></div><div className="list-line"><span>Cloud sync</span><span className="pill">unknown</span></div><div className="list-line"><span>AI raw-transaction protection</span><span className="pill green">verified by code path</span></div><div className="list-line"><span>Legal identity</span><span className="pill">missing</span></div></div><p className="hint">Klirr visar inte påståenden om kryptering, region, full säkerhet eller regelefterlevnad när detta inte kan verifieras i demon.</p></Card></details>
+    <details><summary><b>AI & Budget Buddy</b></summary><Card><h3>Använd AI-funktioner</h3><p>Budgeten fungerar även utan AI. När AI är avstängt kan du fortfarande importera, granska och ändra Budgeten manuellt.</p><div className="row"><button className="btn primary" disabled={prefs.aiEnabled && aiConsentOk} onClick={enableAi}>Aktivera AI och godkänn AI-information</button><button className="btn" disabled={!prefs.aiEnabled && !aiConsentOk} onClick={disableAi}>Stäng av / återkalla AI-samtycke</button></div><p className="hint">Nuvarande AI-samtycke: {aiConsentOk ? 'Godkänt' : 'Saknas eller återkallat'} · version {legalDocumentConfig.aiInfoVersion}</p></Card><Card><h3>Vad AI såg</h3>{normalized.aiContextLog?.length ? <div className="stack">{[...(normalized.aiContextLog || [])].reverse().map(entry => <details key={entry.id}><summary aria-controls={entry.id} aria-expanded="false">{new Date(entry.createdAt).toLocaleString('sv-SE')} · {entry.purpose} · {entry.destinationLabel} · {entry.outcome}</summary><div id={entry.id} className="stack"><p>Kategorier: {entry.dataCategories.join(', ')}</p><pre className="copy-box">{JSON.stringify(entry.summaryFields, null, 2)}</pre><p>Varningar/counts: {entry.warningsIncluded.join(', ') || 'Inga'}</p><p>Råa importerade transaktionsrader ingick inte.</p>{entry.failureReason && <p>Orsak: {entry.failureReason}</p>}</div></details>)}</div> : <p>Ingen AI-förfrågan har skickats ännu.</p>}<button className="btn danger" disabled={!normalized.aiContextLog?.length} onClick={() => window.confirm('Rensa AI-transparenshistorik? Budgetdata påverkas inte.') && setState({ ...normalized, aiContextLog: [] })}>Rensa AI-transparenshistorik</button></Card></details>
+    <details><summary><b>Samtycken</b></summary><Card><h3>Samtycken</h3><p>Villkor och integritetspolicy kan visas och versionsspåras utan att skapa en blockerande demo-vägg. Optional analytics/marketing används inte.</p><div className="list-line"><span>AI-funktioner</span><b>{aiConsentOk ? 'Godkänt' : 'Inte godkänt'}</b></div><div className="list-line"><span>Analys</span><b>Används inte</b></div><div className="list-line"><span>Marknadsföring</span><b>Används inte</b></div><pre className="copy-box">{JSON.stringify(normalized.consentRecords || [], null, 2)}</pre></Card></details>
+    <details><summary><b>Exportera data</b></summary><Card><h3>Exportera alla mina data</h3><p className="hint">JSON-exporten skapas lokalt och innehåller lokalt tillgänglig Budgetdata, importerade transaktioner, Budget Buddy-historik, samtycken och AI-transparenslogg. Den hämtar inte cloud-only-data från tredje part.</p><div className="grid grid-3 compact-grid"><MetricCard label="Workspaces" value={String(exportData.manifest.workspaceCount)} /><MetricCard label="Transaktioner" value={String(exportData.manifest.transactionCount)} /><MetricCard label="AI-loggar" value={String(exportData.manifest.aiLogCount)} /></div><button className="btn primary" onClick={exportAll}>Exportera alla mina data</button></Card></details>
+    <details><summary><b>Radera data och konto</b></summary><Card><h3>Vad vill du radera?</h3><select className="select" value={deleteKind} onChange={e => setDeleteKind(e.target.value as any)}><option value="budget">Rensa aktiv Budget</option><option value="local">Radera all lokal data</option><option value="cloud">Radera molndata</option><option value="user">Radera användarkonto</option></select><p className="hint">Förhandsgranskning: {deleteKind === 'budget' ? 'Rensar lokal Budget i aktiv demo-workspace. Samtycken bevaras.' : deleteKind === 'local' ? 'Rensar localStorage för Klirr i denna webbläsare. Molndata påverkas inte.' : 'Inte tillgängligt i denna demo; ingen simulerad framgång visas.'}</p><button className="btn" onClick={exportAll}>Exportera mina data först</button><label>Skriv RADERA för lokal Budget-rensning<input className="input" value={confirmText} onChange={e => setConfirmText(e.target.value)} /></label><button className="btn danger" onClick={runDeletion}>Kör vald radering</button>{result && <p role="status">{result}</p>}</Card></details>
+    <details><summary><b>Juridiska dokument</b></summary><Card><h3>Juridiska dokument (utkast)</h3>{legalDocs.map(([name, version, date]) => <details key={name}><summary>{name} · version {version} · {date}</summary><article><h4>{name}</h4><p>Status: Utkast, konfigurerbart och kräver slutlig juridisk granskning före produktion.</p><p>Organisation: {legalDocumentConfig.organizationName}. Organisationsnummer: {legalDocumentConfig.organizationNumber}. Kontakt: {legalDocumentConfig.privacyEmail}.</p><p>{name === 'Cookie- och spårningsinformation' ? 'Klirr använder för närvarande inga icke-nödvändiga analys- eller marknadsföringscookies i denna demo.' : 'Texten beskriver Klirrs demoarkitektur, lokalt sparad Budgetdata, valfri molnsynk där den är konfigurerad, AI med sammanfattad kontext, import, export, radering och placeholders för rättslig grund, processorer, regioner och retention.'}</p></article></details>)}</Card></details>
+    <details><summary><b>Tredjepart och licenser</b></summary><Card><h3>Tredjepart</h3><div className="list-line"><span>Supabase</span><b>Auth/molnsnapshot om miljö är konfigurerad</b></div><div className="list-line"><span>AI endpoint</span><b>/api/budget-buddy när AI är aktiverat</b></div><div className="list-line"><span>Analys/marknadsföring</span><b>Inte aktivt</b></div><h3>Öppen källkod och licenser</h3><p className="hint">Direkta paket hämtas från package.json; runtime kräver ingen nätverksfråga.</p><div className="stack">{licenseArtifact.packages.map(pkg => <div className="list-line" key={pkg.name}><span>{pkg.name}<br/><small>{String(pkg.repository)}</small></span><b>{pkg.version} / {pkg.license}</b></div>)}</div></Card></details>
   </>;
 }
 

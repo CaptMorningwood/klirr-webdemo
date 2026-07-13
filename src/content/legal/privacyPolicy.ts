@@ -1,0 +1,2 @@
+import { legalDocumentConfig } from '../../lib/privacy';
+export const privacyPolicyDraft = { title: 'Integritetspolicy', status: 'Utkast – kräver juridisk granskning före produktion', config: legalDocumentConfig, sections: ['personuppgiftsansvarig/kontakt', 'datakategorier', 'ändamål', 'lagringsplatser', 'AI-behandling', 'molnsynk', 'importer', 'rättslig grund – placeholder', 'retention – placeholder', 'mottagare/processorer – review', 'internationella överföringar – review', 'rättigheter', 'klagomål/kontakt', 'uppdateringar/versionering'] };

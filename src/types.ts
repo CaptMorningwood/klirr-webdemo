@@ -264,6 +264,40 @@ export interface BuddySession {
   lastDiscussedPlan?: Array<{ label: string; amount: number; category?: string }>;
 }
 
+export type ConsentDocumentType = 'privacy_policy' | 'terms' | 'ai_features' | 'analytics' | 'marketing';
+export type ConsentStatus = 'accepted' | 'declined' | 'withdrawn';
+export interface ConsentRecord {
+  id: string;
+  type: ConsentDocumentType;
+  documentVersion: string;
+  status: ConsentStatus;
+  decidedAt: string;
+  source: 'onboarding' | 'settings' | 'migration';
+  locale?: string;
+}
+export interface PrivacyPreferences {
+  aiEnabled: boolean;
+  optionalAnalyticsEnabled: boolean;
+  marketingEnabled: boolean;
+  privacyCenterSeenAt?: string;
+  lastExportAt?: string;
+}
+export interface AIContextLogEntry {
+  id: string;
+  createdAt: string;
+  purpose: string;
+  requestType: string;
+  workspaceId?: string;
+  summaryFields: Record<string, unknown>;
+  warningsIncluded: string[];
+  dataCategories: string[];
+  containsRawTransactions: false;
+  destinationLabel: string;
+  retentionExpiresAt?: string;
+  outcome: 'prepared' | 'sent' | 'blocked' | 'failed';
+  failureReason?: string;
+}
+
 export interface AppState {
   accounts: Account[];
   transactions: Transaction[];
@@ -284,6 +318,9 @@ export interface AppState {
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStatus?: SubscriptionStatus;
   entitlements?: Entitlements;
+  privacyPreferences?: PrivacyPreferences;
+  consentRecords?: ConsentRecord[];
+  aiContextLog?: AIContextLogEntry[];
 }
 
 export interface DetectionResult {

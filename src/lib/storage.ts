@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { migrateOnboardingState } from './onboarding';
+import { normalizePrivacyState } from './privacy';
 
 const KEY = 'klirr-webdemo-v0.7-state';
 
@@ -13,7 +14,7 @@ export function loadState(): AppState | null {
   try {
     const parsed = JSON.parse(raw) as AppState;
     const onboarding = migrateOnboardingState({ onboarding: parsed.onboarding, onboardingCompleted: parsed.onboardingCompleted });
-    return { ...parsed, onboarding, onboardingCompleted: onboarding.status === 'COMPLETED' };
+    return normalizePrivacyState({ ...parsed, onboarding, onboardingCompleted: onboarding.status === 'COMPLETED' });
   } catch { return null; }
 }
 

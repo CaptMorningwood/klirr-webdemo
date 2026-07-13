@@ -101,3 +101,11 @@ Visualiseringar i Klirr ska förklara Budgeten snabbare, aldrig bara dekorera.
 Varje översiktsrad får högst en kompakt visualisering.
 
 Text och belopp är alltid primära. Visualiseringar är ett stöd.
+
+## Privacy & Trust
+
+Användaren ska kunna förstå, exportera och radera sin data.
+
+Budget Buddy ska visa vilken sammanfattad kontext AI har fått.
+
+Den manuella Budgeten ska fungera utan AI.

@@ -1,0 +1,60 @@
+{
+  "generatedAt": "build-time-source-artifact",
+  "source": "package.json direct dependencies and installed package metadata",
+  "packages": [
+    {
+      "name": "@supabase/supabase-js",
+      "version": "2.110.1",
+      "license": "MIT",
+      "repository": "https://github.com/supabase/supabase-js.git"
+    },
+    {
+      "name": "@types/react",
+      "version": "19.2.17",
+      "license": "MIT",
+      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+    },
+    {
+      "name": "@types/react-dom",
+      "version": "19.2.3",
+      "license": "MIT",
+      "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+    },
+    {
+      "name": "@vitejs/plugin-react",
+      "version": "5.0.0",
+      "license": "Ej konfigurerat",
+      "repository": "Ej konfigurerat"
+    },
+    {
+      "name": "react",
+      "version": "19.2.7",
+      "license": "MIT",
+      "repository": "https://github.com/facebook/react.git"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.7",
+      "license": "MIT",
+      "repository": "https://github.com/facebook/react.git"
+    },
+    {
+      "name": "typescript",
+      "version": "5.9.3",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/microsoft/TypeScript.git"
+    },
+    {
+      "name": "vite",
+      "version": "7.3.6",
+      "license": "MIT",
+      "repository": "git+https://github.com/vitejs/vite.git"
+    },
+    {
+      "name": "vitest",
+      "version": "4.1.10",
+      "license": "MIT",
+      "repository": "git+https://github.com/vitest-dev/vitest.git"
+    }
+  ]
+}
