@@ -370,3 +370,37 @@ button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visi
   .quick-choice-item b { font-size: 13.5px; }
   .quick-choice-item small { font-size: 12px; }
 }
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 24px;
+  padding: 24px;
+  background: var(--bg, #f6f7f4);
+}
+
+.auth-intro,
+.auth-status-card {
+  width: min(100%, 440px);
+  text-align: center;
+}
+
+.auth-status-card {
+  padding: 28px;
+  border-radius: 20px;
+  background: var(--card, #fff);
+  box-shadow: 0 16px 50px rgb(31 48 37 / 10%);
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 14px;
+  background: #163f2d;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 800;
+}

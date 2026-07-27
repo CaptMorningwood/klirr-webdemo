@@ -2,6 +2,15 @@
 
 Klirr ska låta användaren förstå, exportera och radera sin data. Modellen är ett produkt- och teknikunderlag, inte juridisk slutgranskning.
 
+## Authentication and identity
+
+Clerk owns login identifiers, verification state, Google connections, and
+sessions. Klirr owns the provider-neutral application user and Budget data.
+Email is a candidate recovery signal, not a durable identity key. Klirr stores
+no password or password hash and does not place Budget or transaction data in
+Clerk metadata. Identity removal and product-data deletion are separate,
+explicit lifecycle operations.
+
 - Lokal först: Budget, import, Buddy-historik och privacy state finns i localStorage.
 - Cloud: endast när befintlig auth/sync är konfigurerad; okända regioner/retention visas inte som verifierade.
 - AI: av som standard. AI kräver separat samtycke och kan återkallas utan att Budgeten blockeras.

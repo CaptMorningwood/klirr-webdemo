@@ -12,6 +12,8 @@ This index is the entry point for repository documentation. New internal documen
 - [Architecture decisions](architecture/adr/README.md): durable technical decisions and their consequences.
 - [Engineering](engineering/DEVELOPMENT_WORKFLOW.md): development, branching, review, testing, release, and documentation practices.
 - [Infrastructure](infrastructure/ENVIRONMENTS.md): current facts, decided targets, and deferred configuration.
+- [Identity and authentication](architecture/IDENTITY_AND_AUTHENTICATION.md): provider-neutral ownership, linking, and security boundaries.
+- [Authentication UAT](engineering/AUTHENTICATION_UAT.md): required non-production acceptance checks.
 - `public/`: reserved for reviewed, publishable material; it is not automatically public or deployed.
 
 ## Existing-document inventory and migration

@@ -2,13 +2,14 @@
 
 - **Status:** Current inventory
 - **Owners:** Alex (`@CaptMorningwood`)
-- **Last reviewed:** 2026-07-27
+- **Last reviewed:** 2026-07-28
 
 This inventory preserves existing material without asserting that unreviewed descriptions match current behavior. Classification describes documentation state, not feature availability.
 
 ## Current
 
 - [Product principles](../PRODUCT_PRINCIPLES.md), [privacy trust model](../PRIVACY_TRUST_MODEL.md), [Budget Buddy conversation model](../BUDGET_BUDDY_CONVERSATION_MODEL.md), [conversation evals](../BUDGET_BUDDY_CONVERSATION_EVALS.md), and [import/recurring rules](../IMPORT_AND_RECURRING_RULES.md).
+- [Sign-in behavior](SIGN_IN_BEHAVIOR.md).
 - [Incident and data request runbook](../INCIDENT_AND_DATA_REQUEST_RUNBOOK.md), [legal review checklist](../LEGAL_REVIEW_CHECKLIST.md), and [user test guide](../USER_TEST_GUIDE.md).
 
 ## Needs migration or owner review
