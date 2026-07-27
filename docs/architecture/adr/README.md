@@ -11,3 +11,4 @@ ADRs record approved, durable decisions and do not authorize live changes. Use s
 - [0003: Database migration strategy](0003-database-migration-strategy.md)
 - [0004: Supabase portability boundaries](0004-supabase-portability-boundaries.md)
 - [0005: Future Azure platform direction](0005-future-azure-platform-direction.md)
+- [0006: Clerk with provider-neutral application identity](0006-clerk-provider-neutral-identity.md)

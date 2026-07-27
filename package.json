@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.2",
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@clerk/backend": "^3.13.1",
+    "@clerk/localizations": "^4.13.8",
+    "@clerk/react": "^6.12.8",
     "@supabase/supabase-js": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "react": "^19.0.0",

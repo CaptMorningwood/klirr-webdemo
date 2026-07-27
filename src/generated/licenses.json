@@ -3,6 +3,24 @@
   "source": "package.json direct dependencies and installed package metadata",
   "packages": [
     {
+      "name": "@clerk/backend",
+      "version": "3.13.1",
+      "license": "MIT",
+      "repository": "https://github.com/clerk/javascript.git"
+    },
+    {
+      "name": "@clerk/localizations",
+      "version": "4.13.8",
+      "license": "MIT",
+      "repository": "https://github.com/clerk/javascript.git"
+    },
+    {
+      "name": "@clerk/react",
+      "version": "6.12.8",
+      "license": "MIT",
+      "repository": "https://github.com/clerk/javascript.git"
+    },
+    {
       "name": "@supabase/supabase-js",
       "version": "2.110.1",
       "license": "MIT",

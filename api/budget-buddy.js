@@ -1,5 +1,6 @@
 import { runBudgetBuddyConversation } from './_lib/budgetBuddyConversation.js';
 import { fallbackReply } from './_lib/budgetBuddyFallback.js';
+import { getAuthenticatedAppUser } from './_lib/authenticatedAppUser.js';
 
 function validate(body) {
   if (!body || typeof body.message !== 'string' || !body.message.trim()) return { error: 'Missing message' };
@@ -10,6 +11,13 @@ function validate(body) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  try {
+    if (!await getAuthenticatedAppUser(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+  } catch {
+    return res.status(503).json({ error: 'Authentication is temporarily unavailable' });
+  }
   const parsed = validate(req.body || {});
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   if (!process.env.OPENAI_API_KEY || parsed.requestMetadata?.userRequestedLocalOnly) return res.status(200).json(fallbackReply(parsed.message, false));

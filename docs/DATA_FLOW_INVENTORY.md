@@ -2,6 +2,20 @@
 
 Utkast för intern produkt/teknisk review. Ersätter inte juridisk granskning.
 
+## Identity foundation (issue #72)
+
+- Clerk receives login identifiers, verification state, Google connection data,
+  and session data. Klirr does not store passwords.
+- The server verifies a short-lived Clerk session token and resolves the Clerk
+  subject to `app_users.id` through `external_identities`.
+- Supabase stores the provider-neutral user, minimal identity-link audit data,
+  and Klirr product snapshots. The service-role key remains server-only.
+- Product data is not stored in Clerk metadata.
+- Browser Budget state is keyed by `app_user_id`; the former shared key is
+  quarantined until explicit adoption by the signed-in user.
+- Deleting or disabling a Clerk identity does not itself delete Klirr financial
+  data. Coordinated account deletion is a separate explicit workflow.
+
 ## Källor och lagring
 - Manuell Budget: inkomster, manuella fasta/rörliga utgifter, hushållsprofil och rörlig plan sparas i `localStorage` AppState.
 - Importerade kontoutdrag: rå filtext används bara i importflödet; importerade transaktionsobjekt sparas lokalt, inklusive användarägda råfält när parsern skapar dem.

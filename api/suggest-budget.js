@@ -1,3 +1,5 @@
+import { getAuthenticatedAppUser } from './_lib/authenticatedAppUser.js';
+
 function normalizeHouseholdProfile(profile) {
   const foodAmbition = profile?.foodAmbition === 'budget' || profile?.foodAmbition === 'comfortable' ? profile.foodAmbition : 'normal';
   const transportNeed = profile?.transportNeed === 'low' || profile?.transportNeed === 'high' ? profile.transportNeed : 'normal';
@@ -103,6 +105,13 @@ JSON-format:
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  try {
+    if (!await getAuthenticatedAppUser(req)) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+  } catch {
+    return res.status(503).json({ error: 'Authentication is temporarily unavailable' });
+  }
   const { summary, mode, householdProfile } = req.body || {};
   const suggestion = buildDeterministicSuggestion(summary, mode, householdProfile);
   if (!process.env.OPENAI_API_KEY) return res.status(200).json(suggestion);

@@ -2,23 +2,22 @@
 
 Klirr hjälper användaren förstå vad livet kostar varje månad: månadens fasta utgifter, inkomster, rörlig plan, interna överföringar, scenarier och Budget Buddy.
 
-Den här versionen är byggd för att fungera på två sätt:
-
-1. **Demo/lokalt läge** – fungerar direkt utan Supabase eller OpenAI.
-2. **Beta-ready läge** – förberedd för Supabase Auth/databas och riktig AI via Vercel API-routes.
+Den här versionen kräver Clerk-inloggning innan Budgetdata visas. Clerk hanterar
+Google och engångskod via e-post. Klirr använder ett separat permanent användar-ID
+för Budgetdata och Supabase/PostgreSQL för identitetskoppling och molnsnapshots.
 
 ## Kör lokalt
 
 ```bash
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 ## Deploy till Vercel
 
 ```bash
-npm install
-npm run build
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 Pusha till GitHub och koppla repot till Vercel.
@@ -27,35 +26,24 @@ Pusha till GitHub och koppla repot till Vercel.
 
 Kopiera `.env.example` till `.env.local` lokalt eller lägg in samma variabler i Vercel.
 
-```bash
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
-```
+Se `.env.example` och
+[`docs/infrastructure/CLERK_AUTH_RUNBOOK.md`](docs/infrastructure/CLERK_AUTH_RUNBOOK.md).
+Hemliga Clerk- och Supabase-nycklar är endast servervariabler och får aldrig ha
+prefixet `VITE_`.
 
-Utan nycklar fungerar Klirr fortfarande som lokal demo.
+## Clerk och Klirr-konto
 
-## Supabase och Klirr-konto
+1. Konfigurera en Clerk Development-instans för lokal/Test.
+2. Aktivera endast Google och email verification code.
+3. Lägg miljövariablerna från `.env.example` i rätt isolerad miljö.
+4. Applicera den versionerade Supabase-migrationen.
+5. Kör checklistan i
+   [`docs/engineering/AUTHENTICATION_UAT.md`](docs/engineering/AUTHENTICATION_UAT.md).
 
-1. Skapa Supabase-projekt.
-2. Kör `supabase/schema.sql` i SQL Editor.
-3. Lägg in `VITE_SUPABASE_URL` och `VITE_SUPABASE_ANON_KEY` i Vercel.
-4. Gå till **Supabase Dashboard → Authentication → Providers**.
-5. Aktivera **Google provider** och lägg in OAuth **Client ID** och **Secret** från Google Cloud Console.
-6. Aktivera **Apple provider** och lägg in OAuth **Client ID** och **Secret** från Apple Developer.
-7. Lägg till korrekta redirect URLs i Supabase Auth för lokal utveckling, Vercel Preview och produktion, till exempel:
-   - `http://localhost:5173/**`
-   - `https://*.vercel.app/**`
-   - `https://din-produktionsdomän.se/**`
-8. Kontrollera att Vercel har dessa miljövariabler för både Preview och Production:
-
-```bash
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-```
-
-Under Inställningar i Klirr blir panelen **Mitt Klirr-konto**. Där kan användare logga in med Google, Apple, magisk e-postlänk eller e-post/lösenord och sedan spara, hämta eller radera sin egen molnsnapshot. Google- och Apple-knapparna kräver att respektive provider är aktiverad under Supabase Dashboard → Authentication → Providers och att OAuth Client ID/Secret samt redirect URLs är korrekt ifyllda. Utan Supabase-nycklar fungerar Klirr fortfarande i lokalt demo-läge.
+Clerk-ID eller e-post används aldrig som produktägarnyckel. Servern verifierar
+sessionen och mappar den till `app_users.id`. Klientens ägar-ID accepteras inte
+som bevis. Äldre delad webbläsardata hålls dold tills användaren uttryckligen
+väljer att koppla den till sitt inloggade konto.
 
 ## AI
 
