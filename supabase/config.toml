@@ -1,0 +1,19 @@
+# Local-only Supabase CLI configuration. This is not a remote project reference.
+project_id = "klirr-webdemo-local"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

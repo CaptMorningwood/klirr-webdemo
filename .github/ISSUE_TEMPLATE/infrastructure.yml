@@ -1,0 +1,34 @@
+name: Infrastructure or change
+description: Propose an operational, platform, security, or configuration change
+title: "[Infrastructure]: "
+labels: ["infrastructure"]
+body:
+  - type: textarea
+    id: need
+    attributes: {label: Need and current state}
+    validations: {required: true}
+  - type: textarea
+    id: target
+    attributes: {label: Proposed target and non-goals}
+    validations: {required: true}
+  - type: dropdown
+    id: environments
+    attributes: {label: Highest affected environment, options: [Local, Preview, Test, Production]}
+    validations: {required: true}
+  - type: textarea
+    id: security
+    attributes: {label: Security, privacy, access, secrets, cost, and data impact}
+    validations: {required: true}
+  - type: textarea
+    id: validation
+    attributes: {label: Validation, rollout, monitoring, and rollback}
+    validations: {required: true}
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: No secret value or personal/production data is included.
+          required: true
+        - label: Live changes require separate approval and authorized execution.
+          required: true
