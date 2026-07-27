@@ -1,0 +1,22 @@
+name: Feature
+description: Propose an approved product capability or improvement
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes: {label: Problem and outcome, description: Describe the user problem and desired outcome without prescribing unapproved behavior.}
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance criteria}
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes: {label: Scope and non-goals}
+  - type: textarea
+    id: privacy
+    attributes: {label: Data, privacy, architecture, and documentation impact}
+  - type: textarea
+    id: uat
+    attributes: {label: Test and UAT approach}
